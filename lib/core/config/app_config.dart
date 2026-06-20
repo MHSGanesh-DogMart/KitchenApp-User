@@ -8,7 +8,7 @@ class AppConfig {
   static String get baseUrl {
     switch (flavor) {
       case AppFlavor.dev:
-        return 'https://api.dev.example.com';
+        return 'https://koala-wok-extruding.ngrok-free.dev';
       case AppFlavor.stage:
         return 'https://api.stage.example.com';
       case AppFlavor.prod:
