@@ -1,0 +1,1030 @@
+import 'dart:convert';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import 'package:shimmer/shimmer.dart';
+
+import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_text_styles.dart';
+import '../../../core/routing/route_names.dart';
+import '../../../providers/cart_provider.dart';
+import '../../widgets/inputs/app_search_field.dart';
+import '../padosi/location/location_result.dart';
+import '../padosi/mock/mock_data.dart';
+
+/// Mockup 09 — Home tab.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  /// null = still loading (show shimmer)
+  String? _locLabel;
+  int _categoryIndex = 0;
+  final PageController _cookCtrl = PageController(viewportFraction: .88);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLocation());
+  }
+
+  @override
+  void dispose() {
+    _cookCtrl.dispose();
+    super.dispose();
+  }
+
+  // ─────────────────── Location ───────────────────
+
+  Future<void> _fetchLocation() async {
+    try {
+      final serviceOn = await Geolocator.isLocationServiceEnabled();
+      if (!serviceOn) {
+        _setLabel('Set delivery location');
+        return;
+      }
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        _setLabel('Set delivery location');
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
+      final label = await _reverseGeocode(pos.latitude, pos.longitude);
+      _setLabel(label);
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[Home] Location error: $e');
+      }
+      _setLabel('Set delivery location');
+    }
+  }
+
+  void _setLabel(String s) {
+    if (!mounted) return;
+    setState(() => _locLabel = s);
+  }
+
+  Future<String> _reverseGeocode(double lat, double lng) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'lat': lat.toString(),
+        'lon': lng.toString(),
+        'format': 'json',
+        'addressdetails': '1',
+        'zoom': '17',
+      });
+      final resp = await http.get(uri, headers: {
+        'User-Agent': 'PadosiApp/1.0',
+        'Accept-Language': 'en-IN',
+      });
+      if (resp.statusCode != 200) return 'Pinned location';
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final addr = (body['address'] as Map?)?.cast<String, dynamic>() ?? {};
+      final locality = (addr['suburb'] ??
+          addr['neighbourhood'] ??
+          addr['village'] ??
+          addr['town']) as String?;
+      final city =
+          (addr['city'] ?? addr['town'] ?? addr['village']) as String?;
+      if (locality != null && city != null && locality != city) {
+        return '$locality, $city';
+      }
+      return (locality ?? city ?? 'Pinned location').toString();
+    } catch (_) {
+      return 'Pinned location';
+    }
+  }
+
+  Future<void> _pickLocation() async {
+    final result =
+        await Navigator.pushNamed(context, RouteNames.selectLocation);
+    if (!mounted || result is! LocationResult) return;
+    setState(() => _locLabel = result.label);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        bottom: false,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // ── Greeting + location chip ──
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 18.h),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _LocationChip(
+                            label: _locLabel,
+                            onTap: _pickLocation,
+                          ),
+                          SizedBox(height: 8.h),
+                          Text(
+                            'Hi, Priya 👋',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 24.sp,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -.5,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _IconBtn(
+                      icon: Icons.notifications_none_rounded,
+                      hasDot: true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Search bar ──
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.w),
+                child: AppSearchField(
+                  hint: 'Search dish, cook or cuisine',
+                  onSearch: (_) {},
+                ),
+              ),
+            ),
+
+            // ── Category header ──
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16.w, 22.h, 16.w, 12.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      'Select by category',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 18.sp,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.4,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    Text(
+                      '${MockData.specialties.length} options',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.sp,
+                        color: AppColors.muted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Category pills (food photo + label) ──
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 54.h,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.symmetric(horizontal: 16.w),
+                  itemCount: MockData.specialties.length,
+                  separatorBuilder: (_, _) => SizedBox(width: 8.w),
+                  itemBuilder: (_, i) {
+                    final cat = MockData.specialties[i];
+                    return _CategoryPill(
+                      category: cat,
+                      selected: i == _categoryIndex,
+                      onTap: () => setState(() => _categoryIndex = i),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // ── "Cooks near you" header ──
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16.w, 26.h, 16.w, 12.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Fastest near you',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 18.sp,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -.4,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        SizedBox(height: 2.h),
+                        Text(
+                          '${MockData.cooks.length} verified cooks',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.sp,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    GestureDetector(
+                      onTap: () =>
+                          Navigator.pushNamed(context, RouteNames.discover),
+                      child: Text(
+                        'See all',
+                        style: GoogleFonts.inter(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaryDark,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Tall portrait cook carousel ──
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 320.h,
+                child: PageView.builder(
+                  controller: _cookCtrl,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: MockData.cooks.length.clamp(0, 4),
+                  itemBuilder: (_, i) {
+                    final cook = MockData.cooks[i];
+                    return _CookHeroCard(
+                      cook: cook,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        RouteNames.cookDetail,
+                        arguments: cook,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // ── Today's menu header ──
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16.w, 24.h, 16.w, 12.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      "Today's menu",
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 18.sp,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.4,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    Text(
+                      'Order by 11 AM',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.sp,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── 2-col menu grid ──
+            // childAspectRatio scales with device width automatically —
+            // each cell width = (screenW - sidePadding*2 - crossAxisSpacing)/2,
+            // height = width / aspectRatio. No hardcoded pixel heights.
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 110.h),
+              sliver: SliverGrid.count(
+                crossAxisCount: 2,
+                mainAxisSpacing: 12.h,
+                crossAxisSpacing: 12.w,
+                childAspectRatio: .64,
+                children: MockData.menuItems.map((m) {
+                  final dish = Dish(
+                    name: m.name,
+                    price: m.priceInr,
+                    emoji: '🍽',
+                    heroGradient: [m.tint, m.tint],
+                    image: m.image,
+                    kcal: m.kcal,
+                  );
+                  final cart = context.watch<CartProvider>();
+                  return _MenuGridCard(
+                    item: m,
+                    count: cart.qtyOf(m.name),
+                    onInc: () => context
+                        .read<CartProvider>()
+                        .inc(dish, cookName: m.cookName),
+                    onDec: () =>
+                        context.read<CartProvider>().dec(m.name),
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      RouteNames.dishDetail,
+                      arguments: {
+                        'dish': dish,
+                        'cookName': m.cookName,
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ══════════════════════════ Sub-widgets ══════════════════════════
+
+class _LocationChip extends StatelessWidget {
+  const _LocationChip({required this.label, required this.onTap});
+  final String? label;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    if (label == null) {
+      // Shimmer placeholder while location is being fetched
+      return Shimmer.fromColors(
+        baseColor: AppColors.line,
+        highlightColor: Colors.white,
+        period: const Duration(milliseconds: 1100),
+        child: Container(
+          width: 160.w,
+          height: 30.h,
+          decoration: BoxDecoration(
+            color: AppColors.line,
+            borderRadius: BorderRadius.circular(99.r),
+          ),
+        ),
+      );
+    }
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(99.r),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(99.r),
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(99.r),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 18.w,
+                height: 18.w,
+                decoration: const BoxDecoration(
+                  color: AppColors.primarySoft,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.place_rounded,
+                    size: 11.sp, color: AppColors.primary),
+              ),
+              SizedBox(width: 6.w),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 180.w),
+                child: Text(
+                  label!,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              SizedBox(width: 2.w),
+              Icon(Icons.keyboard_arrow_down_rounded,
+                  size: 14.sp, color: AppColors.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IconBtn extends StatelessWidget {
+  const _IconBtn({required this.icon, this.hasDot = false});
+  final IconData icon;
+  final bool hasDot;
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Material(
+          color: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.r),
+            side: const BorderSide(color: AppColors.line),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12.r),
+            onTap: () {},
+            child: SizedBox(
+              width: 38.w,
+              height: 38.w,
+              child: Icon(icon, size: 18.sp, color: AppColors.ink),
+            ),
+          ),
+        ),
+        if (hasDot)
+          Positioned(
+            top: 7,
+            right: 8,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.surface, width: 1.5),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Category pill — circular food image + label inside a stadium pill.
+/// Selected = coral filled with white text.
+class _CategoryPill extends StatelessWidget {
+  const _CategoryPill({
+    required this.category,
+    required this.selected,
+    required this.onTap,
+  });
+  final FoodCategory category;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.primary : AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(99.r),
+        side: BorderSide(
+          color: selected ? AppColors.primary : AppColors.line,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(99.r),
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(4.w, 4.h, 14.w, 4.h),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Circular food image
+              ClipOval(
+                child: SizedBox(
+                  width: 38.w,
+                  height: 38.w,
+                  child: CachedNetworkImage(
+                    imageUrl: category.image,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => Shimmer.fromColors(
+                      baseColor: AppColors.line,
+                      highlightColor: Colors.white,
+                      child: Container(color: AppColors.line),
+                    ),
+                    errorWidget: (_, _, _) => Container(
+                      color: AppColors.cream,
+                      alignment: Alignment.center,
+                      child: Icon(Icons.restaurant_rounded,
+                          color: AppColors.muted, size: 18.sp),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: 8.w),
+              Text(
+                category.label,
+                style: GoogleFonts.inter(
+                  fontSize: 12.5.sp,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : AppColors.ink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tall portrait cook card — full-bleed food photo, rating chip + heart,
+/// bottom gradient overlay with name + tier + chips.
+class _CookHeroCard extends StatelessWidget {
+  const _CookHeroCard({required this.cook, this.onTap});
+  final Cook cook;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 6.w),
+      child: Material(
+        color: AppColors.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22.r),
+          side: const BorderSide(color: AppColors.line),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CachedNetworkImage(
+                  imageUrl: cook.image,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Shimmer.fromColors(
+                    baseColor: AppColors.line,
+                    highlightColor: Colors.white,
+                    child: Container(color: AppColors.line),
+                  ),
+                  errorWidget: (_, _, _) => Container(
+                    color: AppColors.cream,
+                    alignment: Alignment.center,
+                    child: Icon(Icons.restaurant_rounded,
+                        color: AppColors.muted, size: 48.sp),
+                  ),
+                ),
+              ),
+              // Bottom gradient for legibility
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Color(0xCC000000)],
+                      stops: [0.45, 1],
+                    ),
+                  ),
+                ),
+              ),
+              // Top-left rating chip
+              Positioned(
+                top: 12.h,
+                left: 12.w,
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: 9.w, vertical: 5.h),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(99.r),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star_rounded,
+                          color: const Color(0xFFFFB400), size: 13.sp),
+                      SizedBox(width: 3.w),
+                      Text(
+                        cook.rating.toStringAsFixed(1),
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Top-right heart
+              Positioned(
+                top: 10.h,
+                right: 10.w,
+                child: Container(
+                  width: 36.w,
+                  height: 36.w,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.favorite_border_rounded,
+                      color: AppColors.ink, size: 17.sp),
+                ),
+              ),
+              // Bottom content
+              Positioned(
+                left: 14.w,
+                right: 14.w,
+                bottom: 14.h,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      cook.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 19.sp,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: -.3,
+                      ),
+                    ),
+                    SizedBox(height: 3.h),
+                    Text(
+                      cook.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5.sp,
+                        color: Colors.white.withValues(alpha: .85),
+                      ),
+                    ),
+                    SizedBox(height: 10.h),
+                    Wrap(
+                      spacing: 6.w,
+                      runSpacing: 6.h,
+                      children: [
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8.w, vertical: 3.h),
+                          decoration: BoxDecoration(
+                            color: cook.tier == 1
+                                ? AppColors.tier1Soft
+                                : AppColors.tier2Soft,
+                            borderRadius: BorderRadius.circular(7.r),
+                          ),
+                          child: Text(
+                            cook.tier == 1 ? '🏠 Tier 1' : '✓ Tier 2',
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 9.5.sp,
+                              fontWeight: FontWeight.w700,
+                              color: cook.tier == 1
+                                  ? AppColors.tier1
+                                  : AppColors.tier2,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8.w, vertical: 3.h),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondarySoft,
+                            borderRadius: BorderRadius.circular(7.r),
+                          ),
+                          child: Text(
+                            cook.tier == 1
+                                ? '✓ FSSAI Basic'
+                                : '✓ FSSAI Licensed',
+                            style: GoogleFonts.inter(
+                              fontSize: 9.5.sp,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.secondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact dish card sized for the 2-col SliverGrid.
+class _MenuGridCard extends StatelessWidget {
+  const _MenuGridCard({
+    required this.item,
+    required this.count,
+    required this.onInc,
+    required this.onDec,
+    this.onTap,
+  });
+  final MenuItem item;
+  final int count;
+  final VoidCallback onInc;
+  final VoidCallback onDec;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: item.tint,
+      clipBehavior: Clip.antiAlias,
+      borderRadius: BorderRadius.circular(20.r),
+      child: InkWell(
+        onTap: onTap ?? () {},
+        child: Padding(
+          padding: EdgeInsets.all(10.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Hero image (slightly wider than tall — saves a few px)
+              AspectRatio(
+                aspectRatio: 1.08,
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16.r),
+                      child: SizedBox.expand(
+                        child: CachedNetworkImage(
+                          imageUrl: item.image,
+                          fit: BoxFit.cover,
+                          placeholder: (_, _) => Shimmer.fromColors(
+                            baseColor: Colors.white.withValues(alpha: .35),
+                            highlightColor: Colors.white,
+                            child: Container(color: Colors.white),
+                          ),
+                          errorWidget: (_, _, _) => Container(
+                            color: Colors.black.withValues(alpha: .04),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.restaurant_rounded,
+                                color: AppColors.muted, size: 30.sp),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (item.badge != null)
+                      Positioned(
+                        top: 6.h,
+                        left: 6.w,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 7.w, vertical: 3.h),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(99.r),
+                          ),
+                          child: Text(
+                            item.badge!,
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 9.sp,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      bottom: 6.h,
+                      right: 6.w,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 7.w, vertical: 3.h),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: .6),
+                          borderRadius: BorderRadius.circular(99.r),
+                        ),
+                        child: Text(
+                          '${item.kcal} kcal',
+                          style: GoogleFonts.inter(
+                            fontSize: 9.sp,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 10.h),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 13.5.sp,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                            letterSpacing: -.2,
+                            height: 1.1,
+                          ),
+                        ),
+                        SizedBox(height: 2.h),
+                        Text(
+                          item.cookName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.tiny.copyWith(
+                            color: AppColors.ink.withValues(alpha: .65),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          '₹${item.priceInr}',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        const Spacer(),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          switchInCurve: Curves.easeOutBack,
+                          switchOutCurve: Curves.easeIn,
+                          transitionBuilder: (child, anim) =>
+                              ScaleTransition(scale: anim, child: child),
+                          child: count == 0
+                              ? _AddButton(
+                                  key: const ValueKey('add'),
+                                  onTap: onInc,
+                                )
+                              : _QtyStepper(
+                                  key: const ValueKey('stepper'),
+                                  count: count,
+                                  onInc: onInc,
+                                  onDec: onDec,
+                                ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Initial add button — dark ink 28×28 circle with "+" icon.
+class _AddButton extends StatelessWidget {
+  const _AddButton({super.key, required this.onTap});
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.ink,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 28.w,
+          height: 28.w,
+          child: Icon(Icons.add_rounded, color: Colors.white, size: 17.sp),
+        ),
+      ),
+    );
+  }
+}
+
+/// Quantity stepper — dark ink pill with − N + inline.
+/// Same 28w height as [_AddButton] so the card layout doesn't reflow
+/// when transitioning between the two states.
+class _QtyStepper extends StatelessWidget {
+  const _QtyStepper({
+    super.key,
+    required this.count,
+    required this.onInc,
+    required this.onDec,
+  });
+  final int count;
+  final VoidCallback onInc;
+  final VoidCallback onDec;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 28.w,
+      decoration: BoxDecoration(
+        color: AppColors.ink,
+        borderRadius: BorderRadius.circular(99.r),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StepperBtn(icon: Icons.remove_rounded, onTap: onDec),
+          // Animated number swap on change
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            transitionBuilder: (child, anim) =>
+                FadeTransition(opacity: anim, child: child),
+            child: SizedBox(
+              key: ValueKey(count),
+              width: 18.w,
+              child: Center(
+                child: Text(
+                  '$count',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          _StepperBtn(icon: Icons.add_rounded, onTap: onInc),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepperBtn extends StatelessWidget {
+  const _StepperBtn({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: SizedBox(
+        width: 26.w,
+        height: 28.w,
+        child: Icon(icon, color: Colors.white, size: 15.sp),
+      ),
+    );
+  }
+}
