@@ -5,7 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../../controllers/catalog_controller.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../models/home_feed.dart';
 import '../../../providers/cart_provider.dart';
 import '../../widgets/padosi/dish_grid_card.dart';
 import '../../widgets/padosi/global_cart_bar.dart';
@@ -18,9 +20,15 @@ import '../padosi/mock/mock_data.dart';
 ///  - tangerine accents for price + CTAs
 ///  - Space Grotesk for display, Inter for body
 class DishDetailScreen extends StatefulWidget {
-  const DishDetailScreen({super.key, required this.dish, this.cookName});
+  const DishDetailScreen({
+    super.key,
+    required this.dish,
+    this.cookName,
+    this.dishId,
+  });
   final Dish dish;
   final String? cookName;
+  final String? dishId;
   @override
   State<DishDetailScreen> createState() => _DishDetailScreenState();
 }
@@ -28,6 +36,32 @@ class DishDetailScreen extends StatefulWidget {
 class _DishDetailScreenState extends State<DishDetailScreen> {
   final int _qty = 1;
   String _spice = 'Medium';
+
+  /// Recommended products from the API (dish detail). Empty → fall back
+  /// to the static cross-sell add-ons.
+  List<HomeDish> _recommended = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecommended();
+  }
+
+  Future<void> _loadRecommended() async {
+    if (widget.dishId == null || widget.dishId!.isEmpty) return;
+    final detail = await CatalogController.instance.getDish(widget.dishId!);
+    if (!mounted || detail == null) return;
+    setState(() => _recommended = detail.recommended);
+  }
+
+  Dish _toDish(HomeDish h) => Dish(
+        name: h.name,
+        price: h.price.round(),
+        emoji: '🍽',
+        heroGradient: const [AppColors.primary, AppColors.primary],
+        image: h.imageUrl ?? '',
+        kcal: 0,
+      );
 
   /// addon.name → count.
   final Map<String, int> _addonQty = {};
@@ -362,17 +396,23 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                         mainAxisSpacing: 12.h,
                         crossAxisSpacing: 12.w,
                         childAspectRatio: .64,
-                        children: List.generate(_addons.length, (i) {
-                          final a = _addons[i];
-                          return DishGridCard(
-                            dish: a,
-                            subtitle: 'Recommended',
-                            tint: _addonTints[i % _addonTints.length],
-                            count: _addonQty[a.name] ?? 0,
-                            onInc: () => _incAddon(a.name),
-                            onDec: () => _decAddon(a.name),
-                          );
-                        }),
+                        children: () {
+                          // Prefer API recommended products; else cross-sell add-ons.
+                          final items = _recommended.isNotEmpty
+                              ? _recommended.map(_toDish).toList()
+                              : _addons;
+                          return List.generate(items.length, (i) {
+                            final a = items[i];
+                            return DishGridCard(
+                              dish: a,
+                              subtitle: 'Recommended',
+                              tint: _addonTints[i % _addonTints.length],
+                              count: _addonQty[a.name] ?? 0,
+                              onInc: () => _incAddon(a.name),
+                              onDec: () => _decAddon(a.name),
+                            );
+                          });
+                        }(),
                       ),
 
                       // ── Inline "Add to order" CTA ──

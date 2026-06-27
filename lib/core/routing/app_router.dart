@@ -104,6 +104,7 @@ class AppRouter {
           DishDetailScreen(
             dish: args['dish'] as Dish? ?? MockData.sunita.menu.first,
             cookName: args['cookName'] as String?,
+            dishId: args['dishId'] as String?,
           ),
           settings,
         );

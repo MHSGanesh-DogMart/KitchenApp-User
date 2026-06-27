@@ -5,8 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../../controllers/catalog_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../models/home_feed.dart';
 import '../../../providers/cart_provider.dart';
 import '../../widgets/padosi/dish_grid_card.dart';
 import '../../widgets/padosi/global_cart_bar.dart';
@@ -22,8 +24,50 @@ class CookDetailScreen extends StatefulWidget {
 }
 
 class _CookDetailScreenState extends State<CookDetailScreen> {
-  List<Dish> get _menu =>
-      widget.cook.menu.isNotEmpty ? widget.cook.menu : MockData.sunita.menu;
+  List<HomeDish> _apiDishes = [];
+  bool _loadingMenu = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMenu();
+  }
+
+  Future<void> _loadMenu() async {
+    // Mock cooks (no real id) keep their bundled menu.
+    if (widget.cook.id.isEmpty) {
+      setState(() => _loadingMenu = false);
+      return;
+    }
+    final dishes =
+        await CatalogController.instance.getKitchenMenu(widget.cook.id);
+    if (!mounted) return;
+    setState(() {
+      _apiDishes = dishes;
+      _loadingMenu = false;
+    });
+  }
+
+  /// HomeDish (API) → Dish view model used by DishGridCard.
+  Dish _toDish(HomeDish h) => Dish(
+        name: h.name,
+        price: h.price.round(),
+        emoji: '🍽',
+        heroGradient: const [AppColors.primary, AppColors.primary],
+        image: h.imageUrl ?? '',
+        kcal: 0,
+      );
+
+  List<Dish> get _menu {
+    if (_apiDishes.isNotEmpty) return _apiDishes.map(_toDish).toList();
+    // Fallback to bundled menu only for mock cooks.
+    if (widget.cook.id.isEmpty) {
+      return widget.cook.menu.isNotEmpty
+          ? widget.cook.menu
+          : MockData.sunita.menu;
+    }
+    return [];
+  }
 
   /// Rotating pastel palette for menu cards — same vibe as the Home grid.
   static const _dishTints = <Color>[
@@ -383,35 +427,80 @@ class _CookDetailScreenState extends State<CookDetailScreen> {
               ),
 
               // Menu grid — same premium card style as Home
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 140.h),
-                sliver: SliverGrid.count(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12.h,
-                  crossAxisSpacing: 12.w,
-                  childAspectRatio: .64,
-                  children: List.generate(_menu.length, (i) {
-                    final d = _menu[i];
-                    final cart = context.watch<CartProvider>();
-                    return DishGridCard(
-                      dish: d,
-                      subtitle: cook.name,
-                      tint: _dishTints[i % _dishTints.length],
-                      count: cart.qtyOf(d.name),
-                      onInc: () => context
-                          .read<CartProvider>()
-                          .inc(d, cookName: cook.name),
-                      onDec: () =>
-                          context.read<CartProvider>().dec(d.name),
-                      onTap: () => Navigator.pushNamed(
-                        context,
-                        RouteNames.dishDetail,
-                        arguments: {'dish': d, 'cookName': cook.name},
+              if (_loadingMenu)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 140.h),
+                  sliver: SliverGrid.count(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12.h,
+                    crossAxisSpacing: 12.w,
+                    childAspectRatio: .64,
+                    children: List.generate(
+                      4,
+                      (_) => Shimmer.fromColors(
+                        baseColor: AppColors.line,
+                        highlightColor: Colors.white,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.line,
+                            borderRadius: BorderRadius.circular(20.r),
+                          ),
+                        ),
                       ),
-                    );
-                  }),
+                    ),
+                  ),
+                )
+              else if (_menu.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 50.h),
+                    child: Center(
+                      child: Text(
+                        'No dishes available right now',
+                        style: GoogleFonts.inter(
+                          fontSize: 13.sp,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 140.h),
+                  sliver: SliverGrid.count(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12.h,
+                    crossAxisSpacing: 12.w,
+                    childAspectRatio: .64,
+                    children: List.generate(_menu.length, (i) {
+                      final d = _menu[i];
+                      final dishId =
+                          i < _apiDishes.length ? _apiDishes[i].id : null;
+                      final cart = context.watch<CartProvider>();
+                      return DishGridCard(
+                        dish: d,
+                        subtitle: cook.name,
+                        tint: _dishTints[i % _dishTints.length],
+                        count: cart.qtyOf(d.name),
+                        onInc: () => context
+                            .read<CartProvider>()
+                            .inc(d, cookName: cook.name),
+                        onDec: () =>
+                            context.read<CartProvider>().dec(d.name),
+                        onTap: () => Navigator.pushNamed(
+                          context,
+                          RouteNames.dishDetail,
+                          arguments: {
+                            'dish': d,
+                            'cookName': cook.name,
+                            if (dishId != null) 'dishId': dishId,
+                          },
+                        ),
+                      );
+                    }),
+                  ),
                 ),
-              ),
             ],
           ),
           // Global floating cart bar — same widget used everywhere.

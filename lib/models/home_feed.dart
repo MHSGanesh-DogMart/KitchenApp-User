@@ -1,5 +1,19 @@
 // Models for the customer home feed (GET /api/user/home).
 
+/// A page of results + pagination meta (list endpoints).
+class Paged<T> {
+  const Paged({
+    required this.items,
+    required this.page,
+    required this.totalPages,
+    required this.hasMore,
+  });
+  final List<T> items;
+  final int page;
+  final int totalPages;
+  final bool hasMore;
+}
+
 class HomeCuisine {
   const HomeCuisine({required this.id, required this.name, this.imageUrl});
   final String id;
@@ -75,6 +89,9 @@ class HomeDish {
     this.diet,
     this.spice,
     this.eggless = true,
+    this.portion,
+    this.ingredients,
+    this.description,
   });
 
   final String id;
@@ -86,6 +103,9 @@ class HomeDish {
   final String? diet;
   final String? spice;
   final bool eggless;
+  final String? portion;
+  final String? ingredients;
+  final String? description;
 
   factory HomeDish.fromJson(Map<String, dynamic> j) => HomeDish(
         id: j['id']?.toString() ?? '',
@@ -97,6 +117,23 @@ class HomeDish {
         diet: j['diet']?.toString(),
         spice: j['spice']?.toString(),
         eggless: j['eggless'] as bool? ?? true,
+        portion: j['portion']?.toString(),
+        ingredients: j['ingredients']?.toString(),
+        description: j['description']?.toString(),
+      );
+}
+
+/// Dish details + recommended products (GET /api/user/dishes/:id).
+class DishDetail {
+  const DishDetail({required this.dish, required this.recommended});
+  final HomeDish dish;
+  final List<HomeDish> recommended;
+
+  factory DishDetail.fromJson(Map<String, dynamic> j) => DishDetail(
+        dish: HomeDish.fromJson(j),
+        recommended: ((j['recommended'] as List?) ?? [])
+            .map((e) => HomeDish.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
       );
 }
 

@@ -7,6 +7,13 @@ class ApiEndpoints {
   static const String userCuisines = '/api/user/cuisines';
   static const String userHome = '/api/user/home';
 
+  // ── Browse (kitchens & dishes) ──
+  static const String userKitchens = '/api/user/kitchens';
+  static String userKitchenById(String id) => '/api/user/kitchens/$id';
+  static String userKitchenMenu(String id) => '/api/user/kitchens/$id/menu';
+  static const String userDishes = '/api/user/dishes';
+  static String userDishById(String id) => '/api/user/dishes/$id';
+
   // ── Customer profile (token-based; id derived from JWT) ──
   static const String userMe = '/api/user/me';
   static const String userUpload = '/api/user/upload';
