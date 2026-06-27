@@ -5,6 +5,11 @@ class ApiEndpoints {
   static const String userSendOtp = '/api/user/auth/otp/send';
   static const String userVerifyOtp = '/api/user/auth/otp/verify';
   static const String userCuisines = '/api/user/cuisines';
+  static const String userHome = '/api/user/home';
+
+  // ── Customer profile (token-based; id derived from JWT) ──
+  static const String userMe = '/api/user/me';
+  static const String userUpload = '/api/user/upload';
 
   static const String login = '/auth/login';
   static const String register = '/auth/register';

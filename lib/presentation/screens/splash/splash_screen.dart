@@ -27,12 +27,17 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _bootstrap() async {
+    final auth = context.read<AuthProvider>();
     await Future.wait([
-      context.read<AuthProvider>().restoreSession(),
+      auth.restoreSession(),
       Future.delayed(_minDisplay),
     ]);
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed(RouteNames.onboarding);
+    // Token present → straight to home; otherwise show the onboarding/login.
+    final destination = auth.status == AuthStatus.authenticated
+        ? RouteNames.home
+        : RouteNames.onboarding;
+    Navigator.of(context).pushReplacementNamed(destination);
   }
 
   @override

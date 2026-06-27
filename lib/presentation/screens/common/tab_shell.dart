@@ -34,7 +34,7 @@ class _TabShellState extends State<TabShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      // backgroundColor: AppColors.background,
       extendBody: true,
       body: Stack(
         children: [
@@ -42,11 +42,7 @@ class _TabShellState extends State<TabShell> {
           // Compact cart FAB — small icon + badge count, top-right of
           // the nav pill. Keeps the tab screens clean (the full
           // GlobalCartBar would clash with the floating nav).
-          Positioned(
-            right: 16.w,
-            bottom: 90.h,
-            child: const CartFab(),
-          ),
+          Positioned(right: 16.w, bottom: 90.h, child: const CartFab()),
           Positioned(
             left: 0,
             right: 0,

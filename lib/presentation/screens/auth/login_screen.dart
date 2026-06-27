@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:pinput/pinput.dart';
+import 'package:provider/provider.dart';
 
 import '../../../controllers/user_auth_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../providers/auth_provider.dart';
 
 /// Sign in — hero food photo + sliding white sheet (mockup-style).
 ///
@@ -149,7 +152,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _verifying = false);
     if (result != null) {
-      Navigator.pushReplacementNamed(context, RouteNames.locationPermission);
+      // Persist token + flip auth status (same as the kitchen app).
+      await context.read<AuthProvider>().onLoginSuccess(result.token);
+      if (!mounted) return;
+      await _goNext();
     } else {
       setState(() {
         _otpError = true;
@@ -164,6 +170,27 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_secondsLeft > 0) return;
     final ok = await UserAuthController.instance.sendOtp(_phoneCtrl.text);
     if (ok && mounted) _startResendTimer();
+  }
+
+  /// After auth: if location is already granted + service on, skip the
+  /// permission screen and go straight home; otherwise show it.
+  Future<void> _goNext() async {
+    var granted = false;
+    try {
+      final serviceOn = await Geolocator.isLocationServiceEnabled();
+      final perm = await Geolocator.checkPermission();
+      granted = serviceOn &&
+          (perm == LocationPermission.always ||
+              perm == LocationPermission.whileInUse);
+    } catch (_) {
+      granted = false;
+    }
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      granted ? RouteNames.home : RouteNames.locationPermission,
+      (_) => false,
+    );
   }
 
   void _toast(String msg) => ScaffoldMessenger.of(

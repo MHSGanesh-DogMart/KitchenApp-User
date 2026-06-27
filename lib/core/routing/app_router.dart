@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 // Phase 2 — Auth screens
-import '../../presentation/screens/auth/intro_carousel_screen.dart';
 import '../../presentation/screens/auth/location_permission_screen.dart';
 import '../../presentation/screens/auth/login_screen.dart';
 import '../../presentation/screens/auth/saved_addresses_screen.dart';
@@ -69,8 +68,6 @@ class AppRouter {
       // ── Phase 2 auth flow ──
       case RouteNames.onboarding:
         return _page(const auth_splash.AuthSplashScreen(), settings);
-      case RouteNames.authIntro:
-        return _page(const IntroCarouselScreen(), settings);
       case RouteNames.login:
         return _page(const LoginScreen(), settings);
       // (RouteNames.otp removed — login now handles OTP inline.)

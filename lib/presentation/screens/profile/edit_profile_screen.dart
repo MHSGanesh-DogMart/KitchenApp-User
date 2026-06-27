@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../controllers/user_profile_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../auth/_auth_widgets.dart';
 
@@ -25,13 +26,38 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  final _name = TextEditingController(text: 'Hemanth Reddy');
-  final _phone = TextEditingController(text: '93915 81008');
-  final _email = TextEditingController(text: 'hemanth@mtouchlabs.com');
-  DateTime? _dob = DateTime(1998, 7, 14);
-  String? _avatarPath;
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  final _email = TextEditingController();
+  DateTime? _dob;
+  String? _avatarPath; // newly picked local file
+  String? _avatarUrl; // existing hosted avatar
+  bool _loading = true;
+  bool _saving = false;
 
   final _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final user = await UserProfileController.instance.getMyProfile();
+    if (!mounted) return;
+    if (user != null) {
+      _name.text = user.name;
+      _phone.text = user.phone;
+      _email.text = user.email ?? '';
+      _avatarUrl = (user.profilePicUrl?.isNotEmpty ?? false)
+          ? user.profilePicUrl
+          : null;
+      final parsed = user.dob != null ? DateTime.tryParse(user.dob!) : null;
+      if (parsed != null) _dob = parsed;
+    }
+    setState(() => _loading = false);
+  }
 
   @override
   void dispose() {
@@ -110,14 +136,41 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return '${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
-  void _save() {
-    Navigator.maybePop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Profile updated'),
-        backgroundColor: AppColors.ink,
-      ),
+  Future<void> _save() async {
+    if (_saving) return;
+    if (_name.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: const Text('Name is required'),
+            backgroundColor: AppColors.ink),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+
+    // Upload a freshly picked avatar first.
+    var avatarUrl = _avatarUrl;
+    if (_avatarPath != null) {
+      final url =
+          await UserProfileController.instance.uploadImage(File(_avatarPath!));
+      if (url != null) avatarUrl = url;
+    }
+
+    final dobStr = _dob == null
+        ? null
+        : '${_dob!.year.toString().padLeft(4, '0')}-'
+            '${_dob!.month.toString().padLeft(2, '0')}-'
+            '${_dob!.day.toString().padLeft(2, '0')}';
+
+    final saved = await UserProfileController.instance.updateMyProfile(
+      name: _name.text.trim(),
+      email: _email.text.trim(),
+      dob: dobStr,
+      profilePicUrl: avatarUrl,
     );
+
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (saved != null) Navigator.maybePop(context);
   }
 
   @override
@@ -132,7 +185,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               children: [
                 _Header(),
                 Expanded(
-                  child: ListView(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView(
                     physics: const BouncingScrollPhysics(),
                     padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 110.h),
                     children: [
@@ -140,6 +195,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       Center(
                         child: _AvatarPicker(
                           avatarPath: _avatarPath,
+                          avatarUrl: _avatarUrl,
                           initials: _initials(_name.text),
                           onTap: _pickAvatar,
                         ),
@@ -254,18 +310,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   borderRadius: BorderRadius.circular(14.r),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14.r),
-                    onTap: _save,
+                    onTap: _saving ? null : _save,
                     child: Container(
                       height: 50.h,
                       alignment: Alignment.center,
-                      child: Text(
-                        'Save changes',
-                        style: GoogleFonts.spaceGrotesk(
-                          color: Colors.white,
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      child: _saving
+                          ? SizedBox(
+                              width: 22.w,
+                              height: 22.w,
+                              child: const CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.4,
+                              ),
+                            )
+                          : Text(
+                              'Save changes',
+                              style: GoogleFonts.spaceGrotesk(
+                                color: Colors.white,
+                                fontSize: 14.sp,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                     ),
                   ),
                 ),
@@ -352,10 +417,12 @@ class _Kicker extends StatelessWidget {
 class _AvatarPicker extends StatelessWidget {
   const _AvatarPicker({
     required this.avatarPath,
+    required this.avatarUrl,
     required this.initials,
     required this.onTap,
   });
   final String? avatarPath;
+  final String? avatarUrl;
   final String initials;
   final VoidCallback onTap;
 
@@ -379,24 +446,41 @@ class _AvatarPicker extends StatelessWidget {
             ],
           ),
           alignment: Alignment.center,
-          child: avatarPath == null
-              ? Text(
-                  initials.isEmpty ? 'P' : initials,
-                  style: GoogleFonts.spaceGrotesk(
-                    color: Colors.white,
-                    fontSize: 36.sp,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -.5,
-                  ),
-                )
-              : ClipOval(
+          child: avatarPath != null
+              ? ClipOval(
                   child: Image.file(
                     File(avatarPath!),
                     width: 108.w,
                     height: 108.w,
                     fit: BoxFit.cover,
                   ),
-                ),
+                )
+              : (avatarUrl != null
+                  ? ClipOval(
+                      child: Image.network(
+                        avatarUrl!,
+                        width: 108.w,
+                        height: 108.w,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Text(
+                          initials.isEmpty ? 'P' : initials,
+                          style: GoogleFonts.spaceGrotesk(
+                            color: Colors.white,
+                            fontSize: 36.sp,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Text(
+                      initials.isEmpty ? 'P' : initials,
+                      style: GoogleFonts.spaceGrotesk(
+                        color: Colors.white,
+                        fontSize: 36.sp,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.5,
+                      ),
+                    )),
         ),
         Positioned(
           bottom: 0,
@@ -493,14 +577,22 @@ class _Field extends StatelessWidget {
             // ),
             child: TextFormField(
               controller: controller,
-              // focusNode: focusNode,
-              keyboardType: TextInputType.phone,
+              enabled: enabled,
+              keyboardType: isMobile
+                  ? TextInputType.phone
+                  : (isEmail
+                      ? TextInputType.emailAddress
+                      : TextInputType.text),
               cursorColor: AppColors.primary,
-              textCapitalization: TextCapitalization.sentences,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(10),
-              ],
+              textCapitalization: capitalize
+                  ? TextCapitalization.words
+                  : TextCapitalization.none,
+              inputFormatters: isMobile
+                  ? [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(10),
+                    ]
+                  : null,
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 16.sp,
                 fontWeight: FontWeight.w700,

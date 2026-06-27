@@ -10,9 +10,11 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../../controllers/home_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../models/home_feed.dart';
 import '../../../providers/cart_provider.dart';
 import '../../widgets/inputs/app_search_field.dart';
 import '../padosi/location/location_result.dart';
@@ -31,10 +33,95 @@ class _HomeScreenState extends State<HomeScreen> {
   int _categoryIndex = 0;
   final PageController _cookCtrl = PageController(viewportFraction: .88);
 
+  // ── Home feed ──
+  double _lat = 17.4451; // fallback until GPS resolves
+  double _lng = 78.3502;
+  bool _loadingHome = true;
+  HomeFeed? _feed;
+  String? _selectedCuisineId;
+
+  // Pastel card tints, cycled across the menu grid.
+  static const _tints = [
+    Color(0xFFFFE7D6),
+    Color(0xFFFBEAC6),
+    Color(0xFFD6EEDF),
+    Color(0xFFFFE0E0),
+    Color(0xFFE7E0FF),
+    Color(0xFFD9F0FF),
+  ];
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLocation());
+  }
+
+  // ── Home feed loading ──
+  Future<void> _loadHome() async {
+    if (mounted) setState(() => _loadingHome = true);
+    final feed = await HomeController.instance.getHome(
+      lat: _lat,
+      lng: _lng,
+      cuisineId: _selectedCuisineId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _feed = feed;
+      _loadingHome = false;
+    });
+  }
+
+  /// Tapping a category chip → filter the feed (index 0 = All).
+  void _onCategory(int i) {
+    setState(() => _categoryIndex = i);
+    _selectedCuisineId = i == 0 ? null : _feed?.cuisines[i - 1].id;
+    _loadHome();
+  }
+
+  /// Category chips = "All" + cuisines from the feed.
+  List<FoodCategory> get _categories => [
+    const FoodCategory(label: 'All', image: ''),
+    ...?_feed?.cuisines.map(
+      (c) => FoodCategory(label: c.name, image: c.imageUrl ?? ''),
+    ),
+  ];
+
+  /// API cooks → existing Cook view model (widgets unchanged).
+  List<Cook> get _cookCards => (_feed?.cooks ?? [])
+      .map(
+        (c) => Cook(
+          id: c.id,
+          name: c.name,
+          cuisine: (c.cuisines == null || c.cuisines!.isEmpty)
+              ? 'Home kitchen'
+              : c.cuisines!,
+          distanceKm: c.distanceKm ?? 0,
+          etaMin: c.etaMins ?? 0,
+          rating: c.rating ?? 0,
+          tier: c.tier,
+          heroEmoji: '🍽',
+          heroGradient: const [AppColors.primary, AppColors.primary],
+          image: (c.bannerUrl?.isNotEmpty ?? false)
+              ? c.bannerUrl!
+              : (c.selfieUrl ?? ''),
+        ),
+      )
+      .toList();
+
+  /// API dishes → existing MenuItem view model.
+  List<MenuItem> get _dishCards {
+    final dishes = _feed?.dishes ?? [];
+    return [
+      for (var i = 0; i < dishes.length; i++)
+        MenuItem(
+          name: dishes[i].name,
+          cookName: dishes[i].cookName ?? '',
+          priceInr: dishes[i].price.round(),
+          kcal: 0, // calories not tracked by the backend
+          image: dishes[i].imageUrl ?? '',
+          tint: _tints[i % _tints.length],
+        ),
+    ];
   }
 
   @override
@@ -50,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final serviceOn = await Geolocator.isLocationServiceEnabled();
       if (!serviceOn) {
         _setLabel('Set delivery location');
+        _loadHome(); // fall back to default coords
         return;
       }
       var perm = await Geolocator.checkPermission();
@@ -59,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
         _setLabel('Set delivery location');
+        _loadHome(); // fall back to default coords
         return;
       }
       final pos = await Geolocator.getCurrentPosition(
@@ -67,14 +156,18 @@ class _HomeScreenState extends State<HomeScreen> {
           timeLimit: Duration(seconds: 12),
         ),
       );
+      _lat = pos.latitude;
+      _lng = pos.longitude;
       final label = await _reverseGeocode(pos.latitude, pos.longitude);
       _setLabel(label);
+      _loadHome();
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
         print('[Home] Location error: $e');
       }
       _setLabel('Set delivery location');
+      _loadHome(); // fall back to default coords
     }
   }
 
@@ -92,19 +185,20 @@ class _HomeScreenState extends State<HomeScreen> {
         'addressdetails': '1',
         'zoom': '17',
       });
-      final resp = await http.get(uri, headers: {
-        'User-Agent': 'PadosiApp/1.0',
-        'Accept-Language': 'en-IN',
-      });
+      final resp = await http.get(
+        uri,
+        headers: {'User-Agent': 'PadosiApp/1.0', 'Accept-Language': 'en-IN'},
+      );
       if (resp.statusCode != 200) return 'Pinned location';
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
       final addr = (body['address'] as Map?)?.cast<String, dynamic>() ?? {};
-      final locality = (addr['suburb'] ??
-          addr['neighbourhood'] ??
-          addr['village'] ??
-          addr['town']) as String?;
-      final city =
-          (addr['city'] ?? addr['town'] ?? addr['village']) as String?;
+      final locality =
+          (addr['suburb'] ??
+                  addr['neighbourhood'] ??
+                  addr['village'] ??
+                  addr['town'])
+              as String?;
+      final city = (addr['city'] ?? addr['town'] ?? addr['village']) as String?;
       if (locality != null && city != null && locality != city) {
         return '$locality, $city';
       }
@@ -115,16 +209,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickLocation() async {
-    final result =
-        await Navigator.pushNamed(context, RouteNames.selectLocation);
+    final result = await Navigator.pushNamed(
+      context,
+      RouteNames.selectLocation,
+    );
     if (!mounted || result is! LocationResult) return;
     setState(() => _locLabel = result.label);
+    _lat = result.point.latitude;
+    _lng = result.point.longitude;
+    _loadHome(); // reload feed for the newly picked location
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      // backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: CustomScrollView(
@@ -133,20 +232,17 @@ class _HomeScreenState extends State<HomeScreen> {
             // ── Greeting + location chip ──
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 18.h),
+                padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 8.h),
                 child: Row(
                   children: [
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _LocationChip(
-                            label: _locLabel,
-                            onTap: _pickLocation,
-                          ),
+                          _LocationChip(label: _locLabel, onTap: _pickLocation),
                           SizedBox(height: 8.h),
                           Text(
-                            'Hi, Priya 👋',
+                            'Hi, ${_feed?.userName ?? 'there'} 👋',
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 24.sp,
                               fontWeight: FontWeight.w700,
@@ -166,43 +262,43 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // ── Search bar ──
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16.w),
-                child: AppSearchField(
-                  hint: 'Search dish, cook or cuisine',
-                  onSearch: (_) {},
-                ),
-              ),
-            ),
+            // // ── Search bar ──
+            // SliverToBoxAdapter(
+            //   child: Padding(
+            //     padding: EdgeInsets.symmetric(horizontal: 16.w),
+            //     child: AppSearchField(
+            //       hint: 'Search dish, cook or cuisine',
+            //       onSearch: (_) {},
+            //     ),
+            //   ),
+            // ),
 
             // ── Category header ──
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(16.w, 22.h, 16.w, 12.h),
+                padding: EdgeInsets.fromLTRB(16.w, 0.h, 16.w, 12.h),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text(
-                      'Select by category',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 18.sp,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -.4,
-                        color: AppColors.ink,
-                      ),
-                    ),
-                    Text(
-                      '${MockData.specialties.length} options',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.sp,
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    // Text(
+                    //   'Select by category',
+                    //   style: GoogleFonts.spaceGrotesk(
+                    //     fontSize: 18.sp,
+                    //     fontWeight: FontWeight.w700,
+                    //     letterSpacing: -.4,
+                    //     color: AppColors.ink,
+                    //   ),
+                    // ),
+                    // Text(
+                    //   '${_feed?.cuisines.length ?? 0} options',
+                    //   style: GoogleFonts.inter(
+                    //     fontSize: 11.sp,
+                    //     color: AppColors.muted,
+                    //     fontWeight: FontWeight.w500,
+                    //   ),
+                    // ),
                   ],
                 ),
               ),
@@ -216,14 +312,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   physics: const BouncingScrollPhysics(),
                   padding: EdgeInsets.symmetric(horizontal: 16.w),
-                  itemCount: MockData.specialties.length,
+                  itemCount: _categories.length,
                   separatorBuilder: (_, _) => SizedBox(width: 8.w),
                   itemBuilder: (_, i) {
-                    final cat = MockData.specialties[i];
+                    final cat = _categories[i];
                     return _CategoryPill(
                       category: cat,
                       selected: i == _categoryIndex,
-                      onTap: () => setState(() => _categoryIndex = i),
+                      onTap: () => _onCategory(i),
                     );
                   },
                 ),
@@ -253,7 +349,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         SizedBox(height: 2.h),
                         Text(
-                          '${MockData.cooks.length} verified cooks',
+                          '${_cookCards.length} verified cooks',
                           style: GoogleFonts.inter(
                             fontSize: 11.sp,
                             color: AppColors.muted,
@@ -282,22 +378,29 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(
               child: SizedBox(
                 height: 320.h,
-                child: PageView.builder(
-                  controller: _cookCtrl,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: MockData.cooks.length.clamp(0, 4),
-                  itemBuilder: (_, i) {
-                    final cook = MockData.cooks[i];
-                    return _CookHeroCard(
-                      cook: cook,
-                      onTap: () => Navigator.pushNamed(
-                        context,
-                        RouteNames.cookDetail,
-                        arguments: cook,
+                child: _loadingHome
+                    ? const _CookCarouselShimmer()
+                    : _cookCards.isEmpty
+                    ? const _EmptySection(
+                        icon: Icons.storefront_outlined,
+                        text: 'No kitchens near you yet',
+                      )
+                    : PageView.builder(
+                        controller: _cookCtrl,
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: _cookCards.length.clamp(0, 4),
+                        itemBuilder: (_, i) {
+                          final cook = _cookCards[i];
+                          return _CookHeroCard(
+                            cook: cook,
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              RouteNames.cookDetail,
+                              arguments: cook,
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ),
 
@@ -320,7 +423,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     Text(
-                      'Order by 11 AM',
+                      'See All',
                       style: GoogleFonts.inter(
                         fontSize: 11.sp,
                         color: AppColors.muted,
@@ -335,43 +438,59 @@ class _HomeScreenState extends State<HomeScreen> {
             // childAspectRatio scales with device width automatically —
             // each cell width = (screenW - sidePadding*2 - crossAxisSpacing)/2,
             // height = width / aspectRatio. No hardcoded pixel heights.
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 110.h),
-              sliver: SliverGrid.count(
-                crossAxisCount: 2,
-                mainAxisSpacing: 12.h,
-                crossAxisSpacing: 12.w,
-                childAspectRatio: .64,
-                children: MockData.menuItems.map((m) {
-                  final dish = Dish(
-                    name: m.name,
-                    price: m.priceInr,
-                    emoji: '🍽',
-                    heroGradient: [m.tint, m.tint],
-                    image: m.image,
-                    kcal: m.kcal,
-                  );
-                  final cart = context.watch<CartProvider>();
-                  return _MenuGridCard(
-                    item: m,
-                    count: cart.qtyOf(m.name),
-                    onInc: () => context
-                        .read<CartProvider>()
-                        .inc(dish, cookName: m.cookName),
-                    onDec: () =>
-                        context.read<CartProvider>().dec(m.name),
-                    onTap: () => Navigator.pushNamed(
-                      context,
-                      RouteNames.dishDetail,
-                      arguments: {
-                        'dish': dish,
-                        'cookName': m.cookName,
-                      },
-                    ),
-                  );
-                }).toList(),
+            if (_loadingHome)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 110.h),
+                sliver: SliverGrid.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12.h,
+                  crossAxisSpacing: 12.w,
+                  childAspectRatio: .64,
+                  children: List.generate(4, (_) => const _MenuCellShimmer()),
+                ),
+              )
+            else if (_dishCards.isEmpty)
+              const SliverToBoxAdapter(
+                child: _EmptySection(
+                  icon: Icons.restaurant_menu_outlined,
+                  text: "No dishes on today's menu",
+                ),
+              )
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 110.h),
+                sliver: SliverGrid.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12.h,
+                  crossAxisSpacing: 12.w,
+                  childAspectRatio: .64,
+                  children: _dishCards.map((m) {
+                    final dish = Dish(
+                      name: m.name,
+                      price: m.priceInr,
+                      emoji: '🍽',
+                      heroGradient: [m.tint, m.tint],
+                      image: m.image,
+                      kcal: m.kcal,
+                    );
+                    final cart = context.watch<CartProvider>();
+                    return _MenuGridCard(
+                      item: m,
+                      count: cart.qtyOf(m.name),
+                      onInc: () => context.read<CartProvider>().inc(
+                        dish,
+                        cookName: m.cookName,
+                      ),
+                      onDec: () => context.read<CartProvider>().dec(m.name),
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        RouteNames.dishDetail,
+                        arguments: {'dish': dish, 'cookName': m.cookName},
+                      ),
+                    );
+                  }).toList(),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -426,8 +545,11 @@ class _LocationChip extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
-                child: Icon(Icons.place_rounded,
-                    size: 11.sp, color: AppColors.primary),
+                child: Icon(
+                  Icons.place_rounded,
+                  size: 11.sp,
+                  color: AppColors.primary,
+                ),
               ),
               SizedBox(width: 6.w),
               ConstrainedBox(
@@ -443,8 +565,11 @@ class _LocationChip extends StatelessWidget {
                 ),
               ),
               SizedBox(width: 2.w),
-              Icon(Icons.keyboard_arrow_down_rounded,
-                  size: 14.sp, color: AppColors.muted),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 14.sp,
+                color: AppColors.muted,
+              ),
             ],
           ),
         ),
@@ -515,9 +640,7 @@ class _CategoryPill extends StatelessWidget {
       color: selected ? AppColors.primary : AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(99.r),
-        side: BorderSide(
-          color: selected ? AppColors.primary : AppColors.line,
-        ),
+        side: BorderSide(color: selected ? AppColors.primary : AppColors.line),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(99.r),
@@ -543,8 +666,11 @@ class _CategoryPill extends StatelessWidget {
                     errorWidget: (_, _, _) => Container(
                       color: AppColors.cream,
                       alignment: Alignment.center,
-                      child: Icon(Icons.restaurant_rounded,
-                          color: AppColors.muted, size: 18.sp),
+                      child: Icon(
+                        Icons.restaurant_rounded,
+                        color: AppColors.muted,
+                        size: 18.sp,
+                      ),
                     ),
                   ),
                 ),
@@ -600,8 +726,11 @@ class _CookHeroCard extends StatelessWidget {
                   errorWidget: (_, _, _) => Container(
                     color: AppColors.cream,
                     alignment: Alignment.center,
-                    child: Icon(Icons.restaurant_rounded,
-                        color: AppColors.muted, size: 48.sp),
+                    child: Icon(
+                      Icons.restaurant_rounded,
+                      color: AppColors.muted,
+                      size: 48.sp,
+                    ),
                   ),
                 ),
               ),
@@ -618,42 +747,48 @@ class _CookHeroCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // Top-left rating chip
-              Positioned(
-                top: 12.h,
-                left: 12.w,
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 9.w, vertical: 5.h),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(99.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: .15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.star_rounded,
-                          color: const Color(0xFFFFB400), size: 13.sp),
-                      SizedBox(width: 3.w),
-                      Text(
-                        cook.rating.toStringAsFixed(1),
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 12.sp,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.ink,
+              // Top-left rating chip (only when a rating exists)
+              if (cook.rating > 0)
+                Positioned(
+                  top: 12.h,
+                  left: 12.w,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 9.w,
+                      vertical: 5.h,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(99.r),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.star_rounded,
+                          color: const Color(0xFFFFB400),
+                          size: 13.sp,
+                        ),
+                        SizedBox(width: 3.w),
+                        Text(
+                          cook.rating.toStringAsFixed(1),
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               // Top-right heart
               Positioned(
                 top: 10.h,
@@ -673,8 +808,11 @@ class _CookHeroCard extends StatelessWidget {
                     ],
                   ),
                   alignment: Alignment.center,
-                  child: Icon(Icons.favorite_border_rounded,
-                      color: AppColors.ink, size: 17.sp),
+                  child: Icon(
+                    Icons.favorite_border_rounded,
+                    color: AppColors.ink,
+                    size: 17.sp,
+                  ),
                 ),
               ),
               // Bottom content
@@ -714,7 +852,9 @@ class _CookHeroCard extends StatelessWidget {
                       children: [
                         Container(
                           padding: EdgeInsets.symmetric(
-                              horizontal: 8.w, vertical: 3.h),
+                            horizontal: 8.w,
+                            vertical: 3.h,
+                          ),
                           decoration: BoxDecoration(
                             color: cook.tier == 1
                                 ? AppColors.tier1Soft
@@ -734,7 +874,9 @@ class _CookHeroCard extends StatelessWidget {
                         ),
                         Container(
                           padding: EdgeInsets.symmetric(
-                              horizontal: 8.w, vertical: 3.h),
+                            horizontal: 8.w,
+                            vertical: 3.h,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.secondarySoft,
                             borderRadius: BorderRadius.circular(7.r),
@@ -811,8 +953,11 @@ class _MenuGridCard extends StatelessWidget {
                           errorWidget: (_, _, _) => Container(
                             color: Colors.black.withValues(alpha: .04),
                             alignment: Alignment.center,
-                            child: Icon(Icons.restaurant_rounded,
-                                color: AppColors.muted, size: 30.sp),
+                            child: Icon(
+                              Icons.restaurant_rounded,
+                              color: AppColors.muted,
+                              size: 30.sp,
+                            ),
                           ),
                         ),
                       ),
@@ -823,7 +968,9 @@ class _MenuGridCard extends StatelessWidget {
                         left: 6.w,
                         child: Container(
                           padding: EdgeInsets.symmetric(
-                              horizontal: 7.w, vertical: 3.h),
+                            horizontal: 7.w,
+                            vertical: 3.h,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(99.r),
@@ -838,26 +985,29 @@ class _MenuGridCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                    Positioned(
-                      bottom: 6.h,
-                      right: 6.w,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 7.w, vertical: 3.h),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: .6),
-                          borderRadius: BorderRadius.circular(99.r),
-                        ),
-                        child: Text(
-                          '${item.kcal} kcal',
-                          style: GoogleFonts.inter(
-                            fontSize: 9.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                    if (item.kcal > 0)
+                      Positioned(
+                        bottom: 6.h,
+                        right: 6.w,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 7.w,
+                            vertical: 3.h,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: .6),
+                            borderRadius: BorderRadius.circular(99.r),
+                          ),
+                          child: Text(
+                            '${item.kcal} kcal',
+                            style: GoogleFonts.inter(
+                              fontSize: 9.sp,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -1024,6 +1174,76 @@ class _StepperBtn extends StatelessWidget {
         width: 26.w,
         height: 28.w,
         child: Icon(icon, color: Colors.white, size: 15.sp),
+      ),
+    );
+  }
+}
+
+// ══════════════════════════ Loading / empty ══════════════════════════
+
+/// Shimmer placeholder shaped like the cook hero card.
+class _CookCarouselShimmer extends StatelessWidget {
+  const _CookCarouselShimmer();
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 22.w),
+      child: Shimmer.fromColors(
+        baseColor: AppColors.line,
+        highlightColor: Colors.white,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.line,
+            borderRadius: BorderRadius.circular(22.r),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shimmer cell shaped like a menu grid card.
+class _MenuCellShimmer extends StatelessWidget {
+  const _MenuCellShimmer();
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer.fromColors(
+      baseColor: AppColors.line,
+      highlightColor: Colors.white,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.line,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+      ),
+    );
+  }
+}
+
+/// Neutral empty state for a home section.
+class _EmptySection extends StatelessWidget {
+  const _EmptySection({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 40.h, horizontal: 24.w),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 40.sp, color: AppColors.muted),
+          SizedBox(height: 12.h),
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 13.sp,
+              color: AppColors.muted,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

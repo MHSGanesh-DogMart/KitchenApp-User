@@ -4,6 +4,7 @@ import '../core/network/api_exception.dart';
 import '../core/services/toast_service.dart';
 import '../core/storage/secure_storage.dart';
 import '../core/utils/logger.dart';
+import '../models/user.dart';
 
 /// Customer authentication against the backend (/api/user/auth).
 /// Two-step OTP: sendOtp → verifyOtp (saves the JWT on success).
@@ -39,8 +40,8 @@ class UserAuthController {
   }
 
   /// Verify [otp] for [phone]. On success saves the token + user id and
-  /// returns the auth payload; returns null on failure.
-  Future<Map<String, dynamic>?> verifyOtp(
+  /// returns an [AuthResult]; returns null on failure.
+  Future<AuthResult?> verifyOtp(
     String phone,
     String otp, {
     required String name,
@@ -64,21 +65,22 @@ class UserAuthController {
         final msg = res.data['message'] as String? ?? '';
         if (ok && res.data['data'] != null) {
           final data = res.data['data'] as Map<String, dynamic>;
-          final token = data['token'] as String?;
-          final user = data['user'] as Map<String, dynamic>?;
-          if (token != null && token.isNotEmpty) {
-            await SecureStorage.instance.saveToken(token);
-          }
-          if (user != null && user['id'] != null) {
-            await SecureStorage.instance.saveUserId(user['id'].toString());
+          final token = data['token']?.toString() ?? '';
+          final userJson = data['user'] as Map<String, dynamic>?;
+          if (token.isEmpty || userJson == null) return null;
+
+          final user = User.fromJson(userJson);
+          // Token is persisted by AuthProvider.onLoginSuccess (mirrors the
+          // kitchen app); here we just keep the user id for profile calls.
+          if (user.id.isNotEmpty) {
+            await SecureStorage.instance.saveUserId(user.id);
           }
           if (msg.isNotEmpty) ToastService.success(msg);
-          return {
-            'token': token,
-            'isRegistered': data['isRegistered'] as bool? ?? false,
-            'status': data['status'] as String?,
-            'user': user,
-          };
+          return AuthResult(
+            token: token,
+            user: user,
+            isNewAccount: !(data['isRegistered'] as bool? ?? false),
+          );
         } else if (msg.isNotEmpty) {
           ToastService.error(msg);
         }

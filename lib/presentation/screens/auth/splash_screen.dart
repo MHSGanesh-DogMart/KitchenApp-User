@@ -81,7 +81,7 @@ class AuthSplashScreen extends StatelessWidget {
                     variant: AuthBtnVariant.onDark,
                     onPressed: () => Navigator.pushReplacementNamed(
                       context,
-                      RouteNames.authIntro,
+                      RouteNames.login,
                     ),
                   ),
                 ],

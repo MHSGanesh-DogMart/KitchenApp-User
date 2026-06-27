@@ -3,14 +3,35 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:padosi_food/presentation/widgets/padosi/padosi_confirm_dialog.dart';
 
+import '../../../controllers/user_profile_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../models/user.dart';
 import '../../widgets/padosi/padosi_cards.dart';
 
 /// Screen 09 — Profile / Orders / Settings.
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  User? _user;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final u = await UserProfileController.instance.getMyProfile();
+    if (!mounted) return;
+    setState(() => _user = u);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,14 +99,18 @@ class ProfileScreen extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 30.r,
-                            backgroundColor: const Color(
-                              0xFFECE9FE,
-                            ), // soft purple
-                            child: Icon(
-                              Icons.person_rounded,
-                              color: const Color(0xFF7C3AED), // vibrant purple
-                              size: 32.sp,
-                            ),
+                            backgroundColor: const Color(0xFFECE9FE),
+                            backgroundImage:
+                                (_user?.profilePicUrl?.isNotEmpty ?? false)
+                                ? NetworkImage(_user!.profilePicUrl!)
+                                : null,
+                            child: (_user?.profilePicUrl?.isNotEmpty ?? false)
+                                ? null
+                                : Icon(
+                                    Icons.person_rounded,
+                                    color: const Color(0xFF7C3AED),
+                                    size: 32.sp,
+                                  ),
                           ),
                           SizedBox(width: 16.w),
                           Expanded(
@@ -93,7 +118,7 @@ class ProfileScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Hemu',
+                                  _user?.name ?? 'Loading…',
                                   style: GoogleFonts.inter(
                                     fontSize: 18.sp,
                                     fontWeight: FontWeight.w800,
@@ -102,7 +127,7 @@ class ProfileScreen extends StatelessWidget {
                                 ),
                                 SizedBox(height: 3.h),
                                 Text(
-                                  '95422 95621',
+                                  _user?.phone ?? '',
                                   style: GoogleFonts.inter(
                                     fontSize: 13.sp,
                                     fontWeight: FontWeight.w500,
@@ -227,10 +252,13 @@ class ProfileScreen extends StatelessWidget {
                           _MenuRow(
                             icon: Icons.person_outline_rounded,
                             label: 'Edit Profile',
-                            onTap: () => Navigator.pushNamed(
-                              context,
-                              RouteNames.editProfile,
-                            ),
+                            onTap: () async {
+                              await Navigator.pushNamed(
+                                context,
+                                RouteNames.editProfile,
+                              );
+                              _load(); // refresh after editing
+                            },
                           ),
                           _Sep(),
                           _MenuRow(
@@ -388,7 +416,7 @@ class ProfileScreen extends StatelessWidget {
     if (ok == true && context.mounted) {
       Navigator.pushNamedAndRemoveUntil(
         context,
-        RouteNames.authIntro,
+        RouteNames.login,
         (_) => false,
       );
     }

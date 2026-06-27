@@ -6,7 +6,6 @@ class RouteNames {
 
   // Padosi auth flow (Phase 2)
   static const String onboarding = '/onboarding';        // legacy alias for splash
-  static const String authIntro = '/auth/intro';
   static const String login = '/auth/login';
   // (otp route removed — login handles OTP inline on the same screen.)
   static const String locationPermission = '/auth/location-permission';
