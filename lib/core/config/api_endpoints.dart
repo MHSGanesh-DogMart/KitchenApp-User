@@ -1,6 +1,11 @@
 class ApiEndpoints {
   ApiEndpoints._();
 
+  // ── Customer auth (two-step OTP) ──
+  static const String userSendOtp = '/api/user/auth/otp/send';
+  static const String userVerifyOtp = '/api/user/auth/otp/verify';
+  static const String userCuisines = '/api/user/cuisines';
+
   static const String login = '/auth/login';
   static const String register = '/auth/register';
   static const String verifyOtp = '/auth/verify-otp';

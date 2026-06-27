@@ -7,6 +7,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
 
+import '../../../controllers/user_auth_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
 
@@ -33,6 +34,8 @@ class _LoginScreenState extends State<LoginScreen> {
   static const _heroImage =
       'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=900&q=85&auto=format&fit=crop';
 
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _phoneFocus = FocusNode();
   final _otpCtrl = TextEditingController();
@@ -55,6 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_returning && widget.returningPhone != null) {
       _phoneCtrl.text = widget.returningPhone!.replaceFirst('+91 ', '');
     }
+    if (widget.returningName != null) _nameCtrl.text = widget.returningName!;
     // Auto-dismiss the keyboard the moment a valid 10-digit number
     // is typed — saves the user a tap before hitting "Send OTP".
     _phoneCtrl.addListener(_maybeDismissKeyboard);
@@ -68,6 +72,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
     _phoneCtrl
       ..removeListener(_maybeDismissKeyboard)
       ..dispose();
@@ -78,22 +84,35 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  bool _isValidEmail(String s) =>
+      RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(s);
+
   Future<void> _sendOtp() async {
-    if (_phoneCtrl.text.length != 10 && !_returning) {
+    if (_nameCtrl.text.trim().isEmpty) {
+      _toast('Enter your name');
+      return;
+    }
+    if (!_isValidEmail(_emailCtrl.text.trim())) {
+      _toast('Enter a valid email');
+      return;
+    }
+    if (_phoneCtrl.text.length != 10) {
       _toast('Enter a valid 10-digit number');
       return;
     }
     setState(() => _sending = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    final ok = await UserAuthController.instance.sendOtp(_phoneCtrl.text);
     if (!mounted) return;
     setState(() {
       _sending = false;
-      _otpSent = true;
+      if (ok) _otpSent = true;
     });
-    _startResendTimer();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _otpFocus.requestFocus(),
-    );
+    if (ok) {
+      _startResendTimer();
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _otpFocus.requestFocus(),
+      );
+    }
   }
 
   void _startResendTimer() {
@@ -121,14 +140,19 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _verifyOtp() async {
     if (_otpCode.length < _otpLength) return;
     setState(() => _verifying = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    final result = await UserAuthController.instance.verifyOtp(
+      _phoneCtrl.text,
+      _otpCode,
+      name: _nameCtrl.text.trim(),
+      email: _emailCtrl.text.trim(),
+    );
     if (!mounted) return;
-    if (_otpCode == '1234') {
+    setState(() => _verifying = false);
+    if (result != null) {
       Navigator.pushReplacementNamed(context, RouteNames.locationPermission);
     } else {
       setState(() {
         _otpError = true;
-        _verifying = false;
         _triesLeft--;
       });
       _otpCtrl.clear();
@@ -136,10 +160,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _resend() {
+  Future<void> _resend() async {
     if (_secondsLeft > 0) return;
-    _startResendTimer();
-    _toast('New OTP sent');
+    final ok = await UserAuthController.instance.sendOtp(_phoneCtrl.text);
+    if (ok && mounted) _startResendTimer();
   }
 
   void _toast(String msg) => ScaffoldMessenger.of(
@@ -244,7 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Text(
                           _otpSent
                               ? 'We sent you a 4-digit code'
-                              : "Let's start with your phone number",
+                              : 'Create your Padosi account',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.spaceGrotesk(
                             fontSize: 14.sp,
@@ -287,9 +311,27 @@ class _LoginScreenState extends State<LoginScreen> {
                                 secondsLeft: _secondsLeft,
                                 onResend: _resend,
                               )
-                            : _PhoneRow(
-                                controller: _phoneCtrl,
-                                focusNode: _phoneFocus,
+                            : Column(
+                                children: [
+                                  _InputPill(
+                                    controller: _nameCtrl,
+                                    hint: 'Full name',
+                                    icon: Icons.person_outline_rounded,
+                                    capitalization: TextCapitalization.words,
+                                  ),
+                                  SizedBox(height: 10.h),
+                                  _InputPill(
+                                    controller: _emailCtrl,
+                                    hint: 'Email address',
+                                    icon: Icons.mail_outline_rounded,
+                                    keyboardType: TextInputType.emailAddress,
+                                  ),
+                                  SizedBox(height: 10.h),
+                                  _PhoneRow(
+                                    controller: _phoneCtrl,
+                                    focusNode: _phoneFocus,
+                                  ),
+                                ],
                               ),
                       ),
 
@@ -297,7 +339,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       // ── Primary CTA ──
                       _PrimaryButton(
-                        label: _otpSent ? 'Continue' : 'Send OTP',
+                        label: _otpSent ? 'Create account' : 'Send OTP',
                         loading: _otpSent ? _verifying : _sending,
                         onTap: () {
                           if (_otpSent) {
@@ -429,6 +471,68 @@ class _PhoneRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────── input pill (name / email) ───────────────────────
+
+class _InputPill extends StatelessWidget {
+  const _InputPill({
+    required this.controller,
+    required this.hint,
+    required this.icon,
+    this.keyboardType,
+    this.capitalization = TextCapitalization.none,
+  });
+  final TextEditingController controller;
+  final String hint;
+  final IconData icon;
+  final TextInputType? keyboardType;
+  final TextCapitalization capitalization;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52.h,
+      padding: EdgeInsets.symmetric(horizontal: 16.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppColors.line, width: .8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 19.sp, color: AppColors.muted),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: TextFormField(
+              controller: controller,
+              keyboardType: keyboardType,
+              textCapitalization: capitalization,
+              cursorColor: AppColors.primary,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 15.sp,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+                hintText: hint,
+                hintStyle: GoogleFonts.inter(
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.muted,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
