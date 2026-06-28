@@ -30,7 +30,9 @@ class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
 
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  // Lazy getter (NOT an eager field) — touching NotificationService.instance
+  // must not call FirebaseMessaging.instance before Firebase.initializeApp().
+  FirebaseMessaging get _fcm => FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
 

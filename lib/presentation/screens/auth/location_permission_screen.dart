@@ -156,21 +156,21 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen>
                     onPressed: _loading ? null : _allow,
                   ),
                   SizedBox(height: 10.h),
-                  TextButton(
-                    onPressed: _loading ? null : _manual,
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.ink,
-                      padding: EdgeInsets.symmetric(vertical: 14.h),
-                    ),
-                    child: Text(
-                      'Enter location manually',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 13.sp,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.inkSoft,
-                      ),
-                    ),
-                  ),
+                  // TextButton(
+                  //   onPressed: _loading ? null : _manual,
+                  //   style: TextButton.styleFrom(
+                  //     foregroundColor: AppColors.ink,
+                  //     padding: EdgeInsets.symmetric(vertical: 14.h),
+                  //   ),
+                  //   child: Text(
+                  //     'Enter location manually',
+                  //     style: GoogleFonts.spaceGrotesk(
+                  //       fontSize: 13.sp,
+                  //       fontWeight: FontWeight.w700,
+                  //       color: AppColors.inkSoft,
+                  //     ),
+                  //   ),
+                  // ),
                   SizedBox(height: 8.h),
                 ],
               ),

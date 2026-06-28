@@ -37,13 +37,13 @@ import '../../presentation/screens/orders/report_screen.dart';
 import '../../presentation/screens/orders/tracking_screen.dart' as p4_track;
 // Phase 3 — Discover + Order flow
 import '../../presentation/screens/discover/cart_screen.dart' as p3_cart;
-import '../../presentation/screens/discover/checkout_screen.dart'
-    as p3_checkout;
+import '../../presentation/screens/discover/add_address_screen.dart';
 import '../../presentation/screens/discover/cook_detail_screen.dart' as p3_cook;
 import '../../presentation/screens/discover/coupons_screen.dart';
 import '../../presentation/screens/discover/dish_detail_screen.dart';
 import '../../presentation/screens/discover/favourites_screen.dart';
 import '../../presentation/screens/discover/order_placed_screen.dart';
+import '../../models/order.dart';
 import '../../presentation/screens/discover/payment_method_screen.dart';
 import '../../presentation/screens/discover/schedule_screen.dart';
 import '../../presentation/screens/discover/search_screen.dart';
@@ -116,25 +116,18 @@ class AppRouter {
       case RouteNames.coupons:
         return _page(const CouponsScreen(), settings);
       case RouteNames.checkout:
-        final args = settings.arguments as Map? ?? const {};
-        return _page(
-          p3_checkout.CheckoutScreen(
-            cook: args['cook'] as Cook? ?? MockData.sunita,
-            cart:
-                (args['cart'] as Map<String, int>?) ??
-                <String, int>{'Veg Thali': 1, 'Extra roti': 1},
-            subtotal: (args['total'] as int?) ?? 140,
-          ),
-          settings,
-        );
+        // Cart + checkout are one screen now — both routes show the cart.
+        return _page(const p3_cart.CartScreen(), settings);
+      case RouteNames.addAddress:
+        return _page(const AddAddressScreen(), settings);
       case RouteNames.paymentMethod:
         return _page(const PaymentMethodScreen(), settings);
       case RouteNames.orderPlaced:
         final args = settings.arguments as Map? ?? const {};
         return _page(
           OrderPlacedScreen(
-            cook: args['cook'] as Cook? ?? MockData.sunita,
-            total: (args['total'] as int?) ?? 89,
+            order: args['order'] as Order?,
+            total: (args['total'] as int?) ?? 0,
           ),
           settings,
         );

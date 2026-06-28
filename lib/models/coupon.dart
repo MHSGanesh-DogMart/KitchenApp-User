@@ -5,12 +5,14 @@ class Coupon {
     required this.description,
     required this.type,
     required this.value,
+    this.minOrderValue = 0,
   });
 
   final String code;
   final String description;
   final String type; // "flat" | "percent" | "free_delivery"
   final num value;
+  final num minOrderValue;
 
   /// Short benefit line, e.g. "₹50 off" / "20% off" / "Free delivery".
   String get benefit {
@@ -31,5 +33,6 @@ class Coupon {
         description: j['description']?.toString() ?? '',
         type: j['type']?.toString() ?? 'flat',
         value: (j['value'] as num?) ?? 0,
+        minOrderValue: (j['minOrderValue'] as num?) ?? 0,
       );
 }

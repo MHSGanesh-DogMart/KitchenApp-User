@@ -14,7 +14,10 @@ import '../../../controllers/home_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../core/storage/prefs_storage.dart';
+import '../../../controllers/address_controller.dart';
 import '../../../controllers/cart_controller.dart';
+import '../../../models/address.dart';
 import '../../../models/home_feed.dart';
 import '../../widgets/padosi/add_to_cart.dart';
 import '../../widgets/padosi/wishlist_heart.dart';
@@ -54,9 +57,45 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLocation());
+    // Reflect the selected/changed delivery address on the home feed.
+    AddressController.instance.addListener(_onAddressesChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initLocation());
     // Load the server cart so the floating cart bar reflects saved items.
     CartController.instance.refresh();
+  }
+
+  /// Pick the feed location: the customer's default saved address if they have
+  /// one, otherwise the device GPS.
+  Future<void> _initLocation() async {
+    await AddressController.instance.fetch();
+    final def = AddressController.instance.defaultAddress;
+    if (def != null) {
+      _useAddress(def);
+    } else {
+      _fetchLocation();
+    }
+  }
+
+  /// When the customer adds / selects / changes their default address, switch
+  /// the home feed to that location and reload (calls /user/home with new lat/lng).
+  // Set once the user manually picks a location on the map, so the default-
+  // address listener doesn't clobber their explicit choice.
+  bool _manualPick = false;
+
+  void _onAddressesChanged() {
+    if (!mounted || _manualPick) return;
+    final def = AddressController.instance.defaultAddress;
+    if (def != null && (def.lat != _lat || def.lng != _lng)) {
+      _useAddress(def);
+    }
+  }
+
+  void _useAddress(Address a) {
+    _lat = a.lat;
+    _lng = a.lng;
+    final label = (a.area?.isNotEmpty ?? false) ? a.area! : a.label;
+    if (mounted) setState(() => _locLabel = label);
+    _loadHome(); // re-fetch the feed for the selected address location
   }
 
   // ── Home feed loading ──
@@ -132,6 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    AddressController.instance.removeListener(_onAddressesChanged);
     _cookCtrl.dispose();
     super.dispose();
   }
@@ -165,6 +205,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _lat = pos.latitude;
       _lng = pos.longitude;
       final label = await _reverseGeocode(pos.latitude, pos.longitude);
+      // Persist so the cart defaults to the home screen's lat/lng.
+      await PrefsStorage.instance.saveHomeLocation(
+        pos.latitude,
+        pos.longitude,
+        label: label,
+      );
       _setLabel(label);
       _loadHome();
     } catch (e) {
@@ -220,10 +266,14 @@ class _HomeScreenState extends State<HomeScreen> {
       RouteNames.selectLocation,
     );
     if (!mounted || result is! LocationResult) return;
+    _manualPick = true;
     setState(() => _locLabel = result.label);
     _lat = result.point.latitude;
     _lng = result.point.longitude;
-    _loadHome(); // reload feed for the newly picked location
+    // Persist + sync the cart so the picked location sticks everywhere.
+    PrefsStorage.instance.saveHomeLocation(_lat, _lng, label: result.label);
+    CartController.instance.setLocation(_lat, _lng);
+    _loadHome(); // reload feed for the newly picked location → calls /user/home
   }
 
   @override

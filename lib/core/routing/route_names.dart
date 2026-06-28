@@ -49,6 +49,7 @@ class RouteNames {
 
   // Phase 6 — Profile sub-screens
   static const String addressesList = '/profile/addresses';
+  static const String addAddress = '/address/add';
   static const String payments = '/profile/payments';
   static const String invite = '/profile/invite';
   static const String language = '/profile/language';

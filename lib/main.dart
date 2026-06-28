@@ -28,6 +28,16 @@ void main() {
       DeviceOrientation.portraitDown,
     ]);
 
+    // Status-bar icons correct from the very first frame (cold start), so they
+    // don't stay wrong until a hot reload re-applies the style.
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.white,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ));
+
     await PrefsStorage.instance.init();
 
     final authProvider = AuthProvider();

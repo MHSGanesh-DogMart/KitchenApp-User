@@ -23,6 +23,17 @@ class ApiEndpoints {
   static String userCartItem(String menuItemId) => '/api/user/cart/item/$menuItemId';
   static const String userCartCoupon = '/api/user/cart/coupon';
 
+  // ── Orders + payment ──
+  static const String userOrderCheckout = '/api/user/orders/checkout';
+  static const String userOrderVerify = '/api/user/orders/verify';
+  static const String userOrders = '/api/user/orders';
+  static String userOrderById(String id) => '/api/user/orders/$id';
+
+  // ── Addresses ──
+  static const String userAddresses = '/api/user/addresses';
+  static String userAddressById(String id) => '/api/user/addresses/$id';
+  static String userAddressDefault(String id) => '/api/user/addresses/$id/default';
+
   // ── Wishlist ──
   static const String userWishlist = '/api/user/wishlist';
   static String userWishlistItem(String type, String id) =>

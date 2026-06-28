@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'core/constants/app_strings.dart';
@@ -31,6 +32,21 @@ class App extends StatelessWidget {
           darkTheme: AppTheme.light, // mirror, not dark
           themeMode: ThemeMode.light,
           onGenerateRoute: AppRouter.onGenerateRoute,
+          // Dark status-bar icons on every route (our backgrounds are light).
+          // Screens that need light icons (e.g. splash) wrap themselves in
+          // their own AnnotatedRegion, which sits deeper and wins.
+          builder: (context, child) {
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: const SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: Brightness.dark, // Android
+                statusBarBrightness: Brightness.light, // iOS
+                systemNavigationBarColor: Colors.white,
+                systemNavigationBarIconBrightness: Brightness.dark,
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: const SplashScreen(),
         );
       },

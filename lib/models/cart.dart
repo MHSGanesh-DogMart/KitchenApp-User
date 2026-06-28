@@ -96,6 +96,7 @@ class CartData {
     this.distanceKm,
     this.serviceRadiusKm,
     this.couponError,
+    this.serviceMessage,
   });
 
   final String cartId;
@@ -108,6 +109,7 @@ class CartData {
   final num? distanceKm;
   final num? serviceRadiusKm;
   final String? couponError;
+  final String? serviceMessage; // why delivery isn't available (out of radius)
 
   bool get isEmpty => items.isEmpty;
   bool get isDelivery => fulfillment != 'pickup';
@@ -130,6 +132,7 @@ class CartData {
         distanceKm: j['distanceKm'] as num?,
         serviceRadiusKm: j['serviceRadiusKm'] as num?,
         couponError: j['couponError']?.toString(),
+        serviceMessage: j['serviceMessage']?.toString(),
       );
 
   static const empty = CartData(

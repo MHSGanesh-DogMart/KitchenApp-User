@@ -3,6 +3,8 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Firebase: must come after the Android/Flutter plugins.
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -37,6 +39,12 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Code shrinking is OFF (default). The Razorpay keep-rules below only
+            // take effect if you later set isMinifyEnabled = true.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

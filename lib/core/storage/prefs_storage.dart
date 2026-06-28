@@ -8,6 +8,9 @@ class PrefsStorage {
   static const _kThemeMode = 'theme_mode';
   static const _kLanguage = 'language';
   static const _kNotificationsEnabled = 'notifications_enabled';
+  static const _kHomeLat = 'home_lat';
+  static const _kHomeLng = 'home_lng';
+  static const _kHomeLabel = 'home_label';
 
   SharedPreferences? _prefs;
 
@@ -35,6 +38,17 @@ class PrefsStorage {
   bool get notificationsEnabled => _p.getBool(_kNotificationsEnabled) ?? true;
   Future<void> setNotificationsEnabled(bool v) =>
       _p.setBool(_kNotificationsEnabled, v);
+
+  // ── Home/location (used as the default lat/lng for the cart) ──
+  double? get homeLat => _p.getDouble(_kHomeLat);
+  double? get homeLng => _p.getDouble(_kHomeLng);
+  String? get homeLabel => _p.getString(_kHomeLabel);
+
+  Future<void> saveHomeLocation(double lat, double lng, {String? label}) async {
+    await _p.setDouble(_kHomeLat, lat);
+    await _p.setDouble(_kHomeLng, lng);
+    if (label != null) await _p.setString(_kHomeLabel, label);
+  }
 
   Future<void> clear() async {
     await _p.clear();

@@ -4,7 +4,9 @@ import '../core/config/api_endpoints.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
 import '../core/services/toast_service.dart';
+import '../core/storage/prefs_storage.dart';
 import '../core/utils/logger.dart';
+import '../models/address.dart';
 import '../models/cart.dart';
 import '../models/coupon.dart';
 
@@ -47,6 +49,31 @@ class CartController extends ChangeNotifier {
     _lng = lng;
   }
 
+  /// The delivery address the customer picked (null → using home GPS).
+  Address? _selectedAddress;
+  Address? get selectedAddress => _selectedAddress;
+
+  /// Pick a saved address for delivery — drives the serviceable-radius check.
+  Future<void> setSelectedAddress(Address a) async {
+    _selectedAddress = a;
+    _lat = a.lat;
+    _lng = a.lng;
+    await refresh();
+  }
+
+  /// Default the cart location to the saved home GPS when nothing is set yet
+  /// (so the very first cart call uses the home screen's lat/lng).
+  void loadHomeLocationIfNeeded() {
+    if (_lat == null || _lng == null) {
+      final lat = PrefsStorage.instance.homeLat;
+      final lng = PrefsStorage.instance.homeLng;
+      if (lat != null && lng != null) {
+        _lat = lat;
+        _lng = lng;
+      }
+    }
+  }
+
   Map<String, dynamic> _ctx([Map<String, dynamic>? extra]) => {
         if (_lat != null) 'lat': _lat,
         if (_lng != null) 'lng': _lng,
@@ -78,7 +105,10 @@ class CartController extends ChangeNotifier {
   /// Pull the latest cart + bill.
   Future<void> refresh() async {
     _loading = true;
-    notifyListeners();
+    Future.delayed(Duration(seconds: 0), () {
+      notifyListeners();
+    });
+
     try {
       final res = await ApiClient.instance.get(ApiEndpoints.userCart, query: _query());
       _apply(res);

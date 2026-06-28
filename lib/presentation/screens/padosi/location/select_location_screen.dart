@@ -41,8 +41,18 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
   late LatLng _center = widget.initial?.point ?? _defaultCenter;
   String _label = '—';
   String _detail = 'Fetching your location…';
+  // Structured parts from the last reverse-geocode (prefill the address form).
+  String? _building;
+  String? _road;
+  String? _area;
+  String? _city;
+  String? _state;
+  String? _pincode;
   bool _resolving = false;
   bool _locating = false;
+  // True until the first GPS fix resolves — hides the default-center map so
+  // we never flash a dummy location before the real one loads.
+  bool _initialLocating = false;
 
   List<_Suggestion> _results = [];
   bool _searching = false;
@@ -62,7 +72,8 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
       _detail = widget.initial!.detail;
       _log('Re-opened picker with: $_label  ($_center)');
     } else {
-      // Show default while we wait for GPS, then fetch.
+      // No initial → fetch GPS first; keep a loader over the map until it lands.
+      _initialLocating = true;
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _useCurrentLocation(),
       );
@@ -158,6 +169,9 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
         _locating = false;
         _detail = 'Could not fetch location';
       });
+    } finally {
+      // Reveal the map once the first locate attempt finishes (success or not).
+      if (mounted && _initialLocating) setState(() => _initialLocating = false);
     }
   }
 
@@ -258,43 +272,94 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
                   addr['state_district'])
               as String?;
 
+      // display_name is the reliable full address; use it to fill any gaps
+      // the structured `address` object leaves (common for apartments/POIs).
+      // e.g. "Ramky One Harmony, Pragathi Nagar, Bachupally mandal,
+      //       Medchal–Malkajgiri, Telangana, 500090, India"
+      final displayName = (body['display_name'] as String?) ?? '';
+      final dnParts = displayName
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final pinFromDn = RegExp(r'\b(\d{6})\b').firstMatch(displayName)?.group(1);
+
+      // Building / POI name (e.g. "Ramky One Harmony") — highlight this first.
+      final buildingName = (body['name'] as String?)?.trim();
+      String? building =
+          (buildingName != null && buildingName.isNotEmpty) ? buildingName : null;
+      // Fallback: the first display_name part is usually the building when it
+      // isn't just the locality/road we already have.
+      if (building == null &&
+          dnParts.isNotEmpty &&
+          dnParts.first != locality &&
+          dnParts.first != road &&
+          dnParts.first != city) {
+        building = dnParts.first;
+      }
+
+      final resolvedArea = locality ?? (dnParts.length > 1 ? dnParts[1] : null);
+      final resolvedCity = city ??
+          (dnParts.length >= 3 ? dnParts[dnParts.length - 3] : null);
+      final resolvedState = (addr['state'] as String?) ??
+          (dnParts.length >= 2 ? dnParts[dnParts.length - 2] : null);
+      final resolvedPincode = (addr['postcode'] as String?) ?? pinFromDn;
+
       String label;
-      if (road != null) {
+      if (building != null) {
+        label = building; // prefer the apartment / building name
+      } else if (road != null) {
         label = houseNo != null ? '$houseNo $road' : road;
-        if (locality != null) label = '$label, $locality';
-      } else if (locality != null) {
-        label = locality;
-      } else if (city != null) {
-        label = city;
+        if (resolvedArea != null) label = '$label, $resolvedArea';
+      } else if (resolvedArea != null) {
+        label = resolvedArea;
+      } else if (resolvedCity != null) {
+        label = resolvedCity;
       } else {
-        label = (body['name'] ?? 'Pinned location').toString();
+        label = 'Pinned location';
       }
 
       final detailParts = <String>[
-        if (road != null && locality != null) locality,
-        if (city != null && city != locality) city,
-        if (addr['state'] != null) addr['state'] as String,
-        if (addr['postcode'] != null) addr['postcode'] as String,
-        if (addr['country'] != null && addr['country_code'] != 'in')
-          addr['country'] as String,
+        if (building != null && resolvedArea != null) resolvedArea,
+        if (resolvedCity != null && resolvedCity != resolvedArea) resolvedCity,
+        if (resolvedState != null) resolvedState,
+        if (resolvedPincode != null) resolvedPincode,
       ];
-      final detail = detailParts.isEmpty
-          ? (body['display_name'] ?? '').toString()
-          : detailParts.join(', ');
+      final detail = detailParts.isEmpty ? displayName : detailParts.join(', ');
 
       setState(() {
         _label = label;
         _detail = detail;
+        _building = building ??
+            (road != null && houseNo != null ? '$houseNo $road' : road);
+        _road = road;
+        _area = resolvedArea;
+        _city = resolvedCity;
+        _state = resolvedState;
+        _pincode = resolvedPincode;
         _resolving = false;
       });
 
       _log('Reverse-geocoded ($p)');
-      _log('  Label:  $label');
-      _log('  Detail: $detail');
-      _log('  Full:   ${body['display_name']}');
+      _log('  Label:    $label');
+      _log('  Building: $_building');
+      _log('  Area:     $_area');
+      _log('  City:     $_city');
+      _log('  State:    $_state');
+      _log('  Pincode:  $_pincode');
+      _log('  Full:     $displayName');
     } catch (e) {
       _log('Reverse geocode failed: $e');
-      setState(() => _resolving = false);
+      // Offline / DNS failure → still let the user confirm the pin with coords;
+      // they can type the address fields manually on the next screen.
+      setState(() {
+        _resolving = false;
+        if (_label == '—' || _label == 'Fetching your location…') {
+          _label = 'Pinned location';
+          _detail =
+              '${p.latitude.toStringAsFixed(5)}, ${p.longitude.toStringAsFixed(5)} · address lookup unavailable';
+        }
+      });
     }
   }
 
@@ -315,6 +380,12 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
       label: _label,
       detail: _detail,
       point: _center,
+      building: _building,
+      road: _road,
+      area: _area,
+      city: _city,
+      state: _state,
+      pincode: _pincode,
     );
     _log('CONFIRMED →');
     _log('  Label:  ${result.label}');
@@ -518,6 +589,28 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
                           query: _searchCtrl.text,
                           results: _results,
                           onTap: _pickSuggestion,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Initial loader — covers the default-center map until the
+                // first GPS fix resolves, so we never flash a dummy location.
+                if (_initialLocating)
+                  Positioned.fill(
+                    child: Container(
+                      color: AppColors.background,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            SizedBox(height: 16.h),
+                            Text(
+                              'Finding your location…',
+                              style: AppTextStyles.bodyMd.copyWith(color: AppColors.muted),
+                            ),
+                          ],
                         ),
                       ),
                     ),
