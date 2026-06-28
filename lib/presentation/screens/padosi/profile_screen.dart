@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:padosi_food/presentation/widgets/padosi/padosi_confirm_dialog.dart';
+import 'package:provider/provider.dart';
 
 import '../../../controllers/user_profile_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/routing/route_names.dart';
 import '../../../models/user.dart';
+import '../../../providers/auth_provider.dart';
 import '../../widgets/padosi/padosi_cards.dart';
 
 /// Screen 09 — Profile / Orders / Settings.
@@ -414,11 +416,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       confirmLabel: 'Yes, log out',
     );
     if (ok == true && context.mounted) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        RouteNames.login,
-        (_) => false,
-      );
+      // Drops this device's FCM token server-side, clears the JWT, and
+      // navigates back to login (handled inside AuthProvider.logout).
+      await context.read<AuthProvider>().logout();
     }
   }
 }

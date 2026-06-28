@@ -3,9 +3,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../../controllers/cart_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
-import '../../../providers/cart_provider.dart';
 
 /// Floating cart bar shown on (almost) every screen when the cart
 /// is non-empty. Single source of truth for "items in cart" UI —
@@ -39,7 +39,7 @@ class GlobalCartBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<CartProvider>(
+    return Consumer<CartController>(
       builder: (_, cart, _) {
         final items = cart.itemCount;
         if (items == 0) return const SizedBox.shrink();
@@ -83,7 +83,7 @@ class GlobalCartBar extends StatelessWidget {
                           textBaseline: TextBaseline.alphabetic,
                           children: [
                             Text(
-                              '₹${cart.total}',
+                              '₹${cart.subtotal.round()}',
                               style: GoogleFonts.spaceGrotesk(
                                 fontSize: 20.sp,
                                 fontWeight: FontWeight.w700,

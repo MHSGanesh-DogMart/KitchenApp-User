@@ -3,9 +3,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../../controllers/cart_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
-import '../../../providers/cart_provider.dart';
 
 /// Compact floating cart button — used on the 5 tab screens where the
 /// full [GlobalCartBar] would clash with the floating bottom nav.
@@ -17,7 +17,7 @@ class CartFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<CartProvider>(
+    return Consumer<CartController>(
       builder: (_, cart, _) {
         final n = cart.itemCount;
         if (n == 0) return const SizedBox.shrink();

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../controllers/user_auth_controller.dart';
 import '../core/notifications/notification_service.dart';
 import '../core/routing/route_names.dart';
 import '../core/services/navigation_service.dart';
@@ -34,6 +35,14 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout({bool silent = false}) async {
+    // Drop this device's token server-side first (best-effort, while the JWT
+    // is still valid), then invalidate the local FCM token + clear storage.
+    final deviceToken = NotificationService.instance.token;
+    try {
+      await UserAuthController.instance.logout(fcmToken: deviceToken);
+    } catch (e) {
+      AppLogger.w('Customer logout API failed (continuing): $e');
+    }
     try {
       await NotificationService.instance.deleteToken();
     } catch (e) {

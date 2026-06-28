@@ -6,13 +6,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'controllers/user_auth_controller.dart';
 import 'core/network/api_client.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/storage/prefs_storage.dart';
+import 'core/storage/secure_storage.dart';
 import 'core/utils/logger.dart';
 import 'providers/app_provider.dart';
+import 'controllers/cart_controller.dart';
 import 'providers/auth_provider.dart';
-import 'providers/cart_provider.dart';
 import 'providers/connectivity_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/theme_provider.dart';
@@ -50,7 +52,7 @@ void main() {
           ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
           ChangeNotifierProvider(create: (_) => NotificationProvider()),
-          ChangeNotifierProvider(create: (_) => CartProvider()),
+          ChangeNotifierProvider<CartController>.value(value: CartController.instance),
         ],
         child: const App(),
       ),
@@ -64,9 +66,13 @@ Future<void> _initFirebaseAndPush() async {
   try {
     await Firebase.initializeApp();
     await NotificationService.instance.init(
-      onTokenChanged: (token) {
-        // TODO: send token to backend via AuthRepository when user is logged in.
-        AppLogger.i('Send FCM token to backend: $token');
+      onTokenChanged: (token) async {
+        // Register/append this device's token, but only when logged in
+        // (the verify call already registers it at login time).
+        final jwt = await SecureStorage.instance.getToken();
+        if (jwt != null && jwt.isNotEmpty) {
+          await UserAuthController.instance.registerFcmToken(token);
+        }
       },
     );
   } catch (e, st) {

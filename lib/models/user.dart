@@ -9,7 +9,7 @@ class User {
     this.dob,
     this.profilePicUrl,
     this.status,
-    this.fcmToken,
+    this.fcmTokens = const [],
   });
 
   final String id;
@@ -19,7 +19,7 @@ class User {
   final String? dob;
   final String? profilePicUrl;
   final String? status;
-  final String? fcmToken;
+  final List<String> fcmTokens;
 
   factory User.fromJson(Map<String, dynamic> j) => User(
         id: j['id']?.toString() ?? '',
@@ -29,7 +29,7 @@ class User {
         dob: j['dob']?.toString(),
         profilePicUrl: j['profilePicUrl']?.toString(),
         status: j['status']?.toString(),
-        fcmToken: j['fcmToken']?.toString(),
+        fcmTokens: (j['fcmTokens'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       );
 
   Map<String, dynamic> toJson() => {

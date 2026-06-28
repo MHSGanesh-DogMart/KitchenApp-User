@@ -7,9 +7,10 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../controllers/catalog_controller.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../controllers/cart_controller.dart';
 import '../../../core/routing/route_names.dart';
 import '../../../models/home_feed.dart';
-import '../../../providers/cart_provider.dart';
+import '../../widgets/padosi/add_to_cart.dart';
 import '../../widgets/padosi/dish_grid_card.dart';
 import '../../widgets/padosi/global_cart_bar.dart';
 import '../padosi/mock/mock_data.dart';
@@ -477,17 +478,18 @@ class _CookDetailScreenState extends State<CookDetailScreen> {
                       final d = _menu[i];
                       final dishId =
                           i < _apiDishes.length ? _apiDishes[i].id : null;
-                      final cart = context.watch<CartProvider>();
+                      final id = dishId ?? '';
+                      final cart = context.watch<CartController>();
+                      final count = id.isEmpty ? 0 : cart.qtyOf(id);
                       return DishGridCard(
                         dish: d,
                         subtitle: cook.name,
                         tint: _dishTints[i % _dishTints.length],
-                        count: cart.qtyOf(d.name),
-                        onInc: () => context
-                            .read<CartProvider>()
-                            .inc(d, cookName: cook.name),
-                        onDec: () =>
-                            context.read<CartProvider>().dec(d.name),
+                        count: count,
+                        onInc: () => count == 0
+                            ? addToCart(context, id, silentSuccess: true)
+                            : CartController.instance.increment(id),
+                        onDec: () => CartController.instance.decrement(id),
                         onTap: () => Navigator.pushNamed(
                           context,
                           RouteNames.dishDetail,

@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import '../../../controllers/user_auth_controller.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/notifications/notification_service.dart';
 import '../../../core/routing/route_names.dart';
 import '../../../providers/auth_provider.dart';
 
@@ -45,6 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _otpFocus = FocusNode();
 
   bool _otpSent = false;
+  bool _isNewUser = false; // decided by sendOtp → controls name/email + labels
   bool _sending = false;
   bool _verifying = false;
   bool _otpError = false;
@@ -91,26 +93,21 @@ class _LoginScreenState extends State<LoginScreen> {
       RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(s);
 
   Future<void> _sendOtp() async {
-    if (_nameCtrl.text.trim().isEmpty) {
-      _toast('Enter your name');
-      return;
-    }
-    if (!_isValidEmail(_emailCtrl.text.trim())) {
-      _toast('Enter a valid email');
-      return;
-    }
     if (_phoneCtrl.text.length != 10) {
       _toast('Enter a valid 10-digit number');
       return;
     }
     setState(() => _sending = true);
-    final ok = await UserAuthController.instance.sendOtp(_phoneCtrl.text);
+    final res = await UserAuthController.instance.sendOtp(_phoneCtrl.text);
     if (!mounted) return;
     setState(() {
       _sending = false;
-      if (ok) _otpSent = true;
+      if (res.ok) {
+        _otpSent = true;
+        _isNewUser = !res.isRegistered; // new → ask name/email
+      }
     });
-    if (ok) {
+    if (res.ok) {
       _startResendTimer();
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _otpFocus.requestFocus(),
@@ -142,12 +139,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _verifyOtp() async {
     if (_otpCode.length < _otpLength) return;
+    // New users must give name + a valid email to create the account.
+    if (_isNewUser) {
+      if (_nameCtrl.text.trim().isEmpty) {
+        _toast('Enter your name');
+        return;
+      }
+      if (!_isValidEmail(_emailCtrl.text.trim())) {
+        _toast('Enter a valid email');
+        return;
+      }
+    }
     setState(() => _verifying = true);
     final result = await UserAuthController.instance.verifyOtp(
       _phoneCtrl.text,
       _otpCode,
-      name: _nameCtrl.text.trim(),
-      email: _emailCtrl.text.trim(),
+      name: _isNewUser ? _nameCtrl.text.trim() : '',
+      email: _isNewUser ? _emailCtrl.text.trim() : '',
+      fcmToken: NotificationService.instance.token,
     );
     if (!mounted) return;
     setState(() => _verifying = false);
@@ -168,8 +177,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _resend() async {
     if (_secondsLeft > 0) return;
-    final ok = await UserAuthController.instance.sendOtp(_phoneCtrl.text);
-    if (ok && mounted) _startResendTimer();
+    final res = await UserAuthController.instance.sendOtp(_phoneCtrl.text);
+    if (res.ok && mounted) _startResendTimer();
   }
 
   /// After auth: if location is already granted + service on, skip the
@@ -295,7 +304,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Text(
                           _otpSent
                               ? 'We sent you a 4-digit code'
-                              : 'Create your Padosi account',
+                              : 'Login or create your account',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.spaceGrotesk(
                             fontSize: 14.sp,
@@ -328,37 +337,41 @@ class _LoginScreenState extends State<LoginScreen> {
                         curve: Curves.easeOut,
                         alignment: Alignment.topCenter,
                         child: _otpSent
-                            ? _OtpStack(
-                                controller: _otpCtrl,
-                                focus: _otpFocus,
-                                error: _otpError,
-                                onChanged: _onOtpChanged,
-                                onCompleted: _onOtpCompleted,
-                                triesLeft: _triesLeft,
-                                secondsLeft: _secondsLeft,
-                                onResend: _resend,
-                              )
-                            : Column(
+                            ? Column(
                                 children: [
-                                  _InputPill(
-                                    controller: _nameCtrl,
-                                    hint: 'Full name',
-                                    icon: Icons.person_outline_rounded,
-                                    capitalization: TextCapitalization.words,
+                                  _OtpStack(
+                                    controller: _otpCtrl,
+                                    focus: _otpFocus,
+                                    error: _otpError,
+                                    onChanged: _onOtpChanged,
+                                    onCompleted: _onOtpCompleted,
+                                    triesLeft: _triesLeft,
+                                    secondsLeft: _secondsLeft,
+                                    onResend: _resend,
                                   ),
-                                  SizedBox(height: 10.h),
-                                  _InputPill(
-                                    controller: _emailCtrl,
-                                    hint: 'Email address',
-                                    icon: Icons.mail_outline_rounded,
-                                    keyboardType: TextInputType.emailAddress,
-                                  ),
-                                  SizedBox(height: 10.h),
-                                  _PhoneRow(
-                                    controller: _phoneCtrl,
-                                    focusNode: _phoneFocus,
-                                  ),
+                                  // New customer → collect name + email to
+                                  // create the account (existing users skip this).
+                                  if (_isNewUser) ...[
+                                    SizedBox(height: 16.h),
+                                    _InputPill(
+                                      controller: _nameCtrl,
+                                      hint: 'Full name',
+                                      icon: Icons.person_outline_rounded,
+                                      capitalization: TextCapitalization.words,
+                                    ),
+                                    SizedBox(height: 10.h),
+                                    _InputPill(
+                                      controller: _emailCtrl,
+                                      hint: 'Email address',
+                                      icon: Icons.mail_outline_rounded,
+                                      keyboardType: TextInputType.emailAddress,
+                                    ),
+                                  ],
                                 ],
+                              )
+                            : _PhoneRow(
+                                controller: _phoneCtrl,
+                                focusNode: _phoneFocus,
                               ),
                       ),
 
@@ -366,7 +379,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       // ── Primary CTA ──
                       _PrimaryButton(
-                        label: _otpSent ? 'Create account' : 'Send OTP',
+                        label: _otpSent
+                            ? (_isNewUser ? 'Create account' : 'Login')
+                            : 'Send OTP',
                         loading: _otpSent ? _verifying : _sending,
                         onTap: () {
                           if (_otpSent) {

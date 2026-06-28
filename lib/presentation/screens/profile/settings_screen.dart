@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
+import '../../../controllers/user_auth_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../providers/auth_provider.dart';
 import '../../widgets/padosi/padosi_confirm_dialog.dart';
 import '../auth/_auth_widgets.dart';
 
@@ -159,13 +162,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       confirmLabel: 'Yes, delete account',
       destructive: true,
     );
-    if (ok == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Account deletion request sent'),
-          backgroundColor: AppColors.ink,
-        ),
-      );
+    if (ok != true || !mounted) return;
+    final deleted = await UserAuthController.instance.deleteAccount();
+    if (deleted && mounted) {
+      // Token already invalidated server-side by the delete; just clear the
+      // local session silently and return to login.
+      await context.read<AuthProvider>().logout(silent: true);
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, RouteNames.login, (_) => false);
+      }
     }
   }
 }

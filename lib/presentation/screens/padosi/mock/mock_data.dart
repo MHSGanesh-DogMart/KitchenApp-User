@@ -55,6 +55,7 @@ class Dish {
     required this.heroGradient,
     this.image,
     this.kcal,
+    this.id = '',
   });
 
   final String name;
@@ -63,6 +64,9 @@ class Dish {
   final List<Color> heroGradient;
   final String? image;
   final int? kcal;
+
+  /// Backend MenuItem id (empty for pure-mock data) — used by the server cart.
+  final String id;
 }
 
 /// Featured items for the "Today's menu" horizontal rail on Home.
@@ -76,6 +80,7 @@ class MenuItem {
     required this.tint,
     this.badge,
     this.weightLabel,
+    this.id = '',
   });
 
   final String name;
@@ -86,6 +91,9 @@ class MenuItem {
   final Color tint; // pastel card surface
   final String? badge; // "Popular" / "Limited" / "New"
   final String? weightLabel; // e.g. "320 g"
+
+  /// Backend MenuItem id (empty for pure-mock data) — used by the server cart.
+  final String id;
 }
 
 class MockData {

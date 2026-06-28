@@ -92,6 +92,7 @@ class HomeDish {
     this.portion,
     this.ingredients,
     this.description,
+    this.isWishlisted = false,
   });
 
   final String id;
@@ -106,6 +107,7 @@ class HomeDish {
   final String? portion;
   final String? ingredients;
   final String? description;
+  final bool isWishlisted;
 
   factory HomeDish.fromJson(Map<String, dynamic> j) => HomeDish(
         id: j['id']?.toString() ?? '',
@@ -120,6 +122,7 @@ class HomeDish {
         portion: j['portion']?.toString(),
         ingredients: j['ingredients']?.toString(),
         description: j['description']?.toString(),
+        isWishlisted: j['isWishlisted'] as bool? ?? false,
       );
 }
 

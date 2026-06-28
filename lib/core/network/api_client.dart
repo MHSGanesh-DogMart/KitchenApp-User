@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
 import 'package:path_provider/path_provider.dart';
@@ -26,17 +25,16 @@ class ApiClient {
       ),
     );
     _dio.interceptors.add(_authInterceptor());
-    if (kDebugMode) {
-      _dio.interceptors.add(LogInterceptor(
-        request: false,
-        requestHeader: false,
-        requestBody: true,
-        responseHeader: false,
-        responseBody: true,
-        error: true,
-        logPrint: (o) => AppLogger.d(o.toString()),
-      ));
-    }
+    // Always log every request/response (all build modes) for debugging.
+    _dio.interceptors.add(LogInterceptor(
+      request: true,
+      requestHeader: false,
+      requestBody: true,
+      responseHeader: false,
+      responseBody: true,
+      error: true,
+      logPrint: (o) => AppLogger.d(o.toString()),
+    ));
   }
 
   static final ApiClient instance = ApiClient._();

@@ -111,16 +111,8 @@ class AppRouter {
       case RouteNames.schedule:
         return _page(const ScheduleScreen(), settings);
       case RouteNames.cart:
-        final args = settings.arguments as Map? ?? const {};
-        return _page(
-          p3_cart.CartScreen(
-            cook: args['cook'] as Cook? ?? MockData.sunita,
-            cart:
-                (args['cart'] as Map<String, int>?) ??
-                <String, int>{'Full Veg Thali': 1},
-          ),
-          settings,
-        );
+        // Cart is fully server-backed now — no args needed.
+        return _page(const p3_cart.CartScreen(), settings);
       case RouteNames.coupons:
         return _page(const CouponsScreen(), settings);
       case RouteNames.checkout:

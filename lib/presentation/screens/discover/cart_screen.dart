@@ -5,22 +5,18 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../../controllers/cart_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
-import '../../../providers/cart_provider.dart';
-import '../padosi/mock/mock_data.dart';
+import '../../../models/cart.dart';
 
 /// Mockup 16 — Your cart.
-/// Premium polish: reads the global [CartProvider]; groups by cook;
-/// food-photo row tiles; cream/ink stepper; sticky checkout pill.
 ///
-/// (`cook` / `cart` constructor args kept for back-compat with the
-/// router but are no longer used — the screen pulls everything from
-/// the provider so any screen's add/remove stays in sync.)
+/// Backed entirely by the server-side [CartController] — single source of
+/// truth. A cart belongs to one kitchen, so items render under one group.
+/// Every figure in the bill comes from the backend (never computed here).
 class CartScreen extends StatefulWidget {
-  const CartScreen({super.key, this.cook, this.cart});
-  final Cook? cook;
-  final Map<String, int>? cart;
+  const CartScreen({super.key});
   @override
   State<CartScreen> createState() => _CartScreenState();
 }
@@ -28,24 +24,20 @@ class CartScreen extends StatefulWidget {
 class _CartScreenState extends State<CartScreen> {
   String _note = '';
 
-  static const _kDelivery = 25;
-  static const _kTaxes = 14;
+  @override
+  void initState() {
+    super.initState();
+    CartController.instance.refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final cart = context.watch<CartProvider>();
-    final items = cart.values.toList();
-
-    // Group lines by cook name so the cart reads as "kitchens you've
-    // ordered from", matching the Indian home-chef mental model.
-    final grouped = <String, List<CartLine>>{};
-    for (final l in items) {
-      grouped.putIfAbsent(l.cookName, () => []).add(l);
-    }
-
-    final subtotal = cart.total;
-    final toPay = subtotal == 0 ? 0 : subtotal + _kDelivery + _kTaxes;
+    final controller = context.watch<CartController>();
+    final data = controller.cart;
+    final items = data.items;
+    final bill = data.bill;
     final isEmpty = items.isEmpty;
+    final loading = controller.loading && isEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -55,80 +47,51 @@ class _CartScreenState extends State<CartScreen> {
             bottom: false,
             child: Column(
               children: [
-                _CartHeader(itemCount: cart.itemCount),
+                _CartHeader(itemCount: data.itemCount),
                 Expanded(
-                  child: isEmpty
-                      ? const _EmptyState()
-                      : ListView(
-                          padding: EdgeInsets.fromLTRB(
-                            16.w,
-                            8.h,
-                            16.w,
-                            150.h,
-                          ),
-                          physics: const BouncingScrollPhysics(),
-                          children: [
-                            // ── Cook groups ──
-                            for (final entry in grouped.entries) ...[
-                              _CookGroupCard(
-                                cookName: entry.key,
-                                lines: entry.value,
-                                onInc: (n) {
-                                  final line = cart.lines[n];
-                                  if (line == null) return;
-                                  cart.inc(
-                                    line.dish,
-                                    cookName: line.cookName,
-                                  );
-                                },
-                                onDec: cart.dec,
-                              ),
-                              SizedBox(height: 12.h),
-                            ],
-
-                            // ── Cooking note ──
-                            _NoteCard(
-                              value: _note,
-                              onChanged: (v) => setState(() => _note = v),
+                  child: loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : isEmpty
+                          ? const _EmptyState()
+                          : ListView(
+                              padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 150.h),
+                              physics: const BouncingScrollPhysics(),
+                              children: [
+                                _CookGroupCard(
+                                  kitchenName: data.kitchen?.name ?? 'Your kitchen',
+                                  etaMins: data.kitchen?.etaMins ?? 28,
+                                  items: items,
+                                  onInc: (id) =>
+                                      CartController.instance.increment(id),
+                                  onDec: (id) =>
+                                      CartController.instance.decrement(id),
+                                ),
+                                SizedBox(height: 12.h),
+                                _NoteCard(
+                                  value: _note,
+                                  onChanged: (v) => setState(() => _note = v),
+                                ),
+                                SizedBox(height: 12.h),
+                                _BillCard(bill: bill),
+                                SizedBox(height: 12.h),
+                                _ProtectionRibbon(),
+                              ],
                             ),
-                            SizedBox(height: 12.h),
-
-                            // ── Bill summary ──
-                            _BillCard(
-                              subtotal: subtotal,
-                              delivery: _kDelivery,
-                              taxes: _kTaxes,
-                              total: toPay,
-                            ),
-                            SizedBox(height: 12.h),
-
-                            // ── Padosi Protection ribbon ──
-                            _ProtectionRibbon(),
-                          ],
-                        ),
                 ),
               ],
             ),
           ),
-          // ── Sticky checkout bar ──
           if (!isEmpty)
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
               child: _CheckoutBar(
-                items: cart.itemCount,
-                total: toPay,
+                total: bill.grandTotal.round(),
                 onTap: () => Navigator.pushNamed(
                   context,
                   RouteNames.checkout,
-                  arguments: {
-                    'cook': widget.cook ?? MockData.sunita,
-                    'cart': {
-                      for (final l in items) l.dish.name: l.qty,
-                    },
-                    'total': subtotal,
-                  },
+                  arguments: {'total': bill.grandTotal.round()},
                 ),
               ),
             ),
@@ -176,10 +139,7 @@ class _CartHeader extends StatelessWidget {
                   itemCount == 0
                       ? 'No items yet'
                       : '$itemCount item${itemCount == 1 ? '' : 's'} · review and checkout',
-                  style: GoogleFonts.inter(
-                    fontSize: 12.sp,
-                    color: AppColors.muted,
-                  ),
+                  style: GoogleFonts.inter(fontSize: 12.sp, color: AppColors.muted),
                 ),
               ],
             ),
@@ -194,15 +154,17 @@ class _CartHeader extends StatelessWidget {
 
 class _CookGroupCard extends StatelessWidget {
   const _CookGroupCard({
-    required this.cookName,
-    required this.lines,
+    required this.kitchenName,
+    required this.etaMins,
+    required this.items,
     required this.onInc,
     required this.onDec,
   });
-  final String cookName;
-  final List<CartLine> lines;
-  final void Function(String dishName) onInc;
-  final void Function(String dishName) onDec;
+  final String kitchenName;
+  final int etaMins;
+  final List<CartItemDto> items;
+  final void Function(String menuItemId) onInc;
+  final void Function(String menuItemId) onDec;
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +176,6 @@ class _CookGroupCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Cook header strip (cream chip-on-card)
           Padding(
             padding: EdgeInsets.fromLTRB(14.w, 14.h, 14.w, 10.h),
             child: Row(
@@ -228,7 +189,7 @@ class _CookGroupCard extends StatelessWidget {
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    cookName
+                    kitchenName
                         .split(' ')
                         .take(2)
                         .map((s) => s.isNotEmpty ? s[0] : '')
@@ -246,7 +207,7 @@ class _CookGroupCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        cookName,
+                        kitchenName,
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 14.sp,
                           fontWeight: FontWeight.w700,
@@ -266,8 +227,7 @@ class _CookGroupCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
+                  padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
                   decoration: BoxDecoration(
                     color: AppColors.cream,
                     borderRadius: BorderRadius.circular(99.r),
@@ -279,7 +239,7 @@ class _CookGroupCard extends StatelessWidget {
                           size: 12.sp, color: AppColors.inkSoft),
                       SizedBox(width: 4.w),
                       Text(
-                        '28 min',
+                        '$etaMins min',
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 11.sp,
                           fontWeight: FontWeight.w700,
@@ -293,14 +253,13 @@ class _CookGroupCard extends StatelessWidget {
             ),
           ),
           Divider(height: 1, color: AppColors.line),
-          // Dish lines
-          for (var i = 0; i < lines.length; i++) ...[
+          for (var i = 0; i < items.length; i++) ...[
             _LineTile(
-              line: lines[i],
-              onInc: () => onInc(lines[i].dish.name),
-              onDec: () => onDec(lines[i].dish.name),
+              item: items[i],
+              onInc: () => onInc(items[i].menuItemId),
+              onDec: () => onDec(items[i].menuItemId),
             ),
-            if (i < lines.length - 1)
+            if (i < items.length - 1)
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 14.w),
                 child: Divider(height: 1, color: AppColors.line),
@@ -313,50 +272,43 @@ class _CookGroupCard extends StatelessWidget {
 }
 
 class _LineTile extends StatelessWidget {
-  const _LineTile({
-    required this.line,
-    required this.onInc,
-    required this.onDec,
-  });
-  final CartLine line;
+  const _LineTile({required this.item, required this.onInc, required this.onDec});
+  final CartItemDto item;
   final VoidCallback onInc;
   final VoidCallback onDec;
 
   @override
   Widget build(BuildContext context) {
-    final d = line.dish;
     return Padding(
       padding: EdgeInsets.fromLTRB(14.w, 12.h, 14.w, 12.h),
       child: Row(
         children: [
-          // Food photo (60×60, 14r)
           ClipRRect(
             borderRadius: BorderRadius.circular(14.r),
             child: SizedBox(
               width: 60.w,
               height: 60.w,
-              child: d.image != null
+              child: (item.imageUrl != null && item.imageUrl!.isNotEmpty)
                   ? CachedNetworkImage(
-                      imageUrl: d.image!,
+                      imageUrl: item.imageUrl!,
                       fit: BoxFit.cover,
                       placeholder: (_, _) => Shimmer.fromColors(
                         baseColor: AppColors.line,
                         highlightColor: Colors.white,
                         child: Container(color: AppColors.line),
                       ),
-                      errorWidget: (_, _, _) => _fallback(d),
+                      errorWidget: (_, _, _) => _fallback(),
                     )
-                  : _fallback(d),
+                  : _fallback(),
             ),
           ),
           SizedBox(width: 12.w),
-          // Name + price
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  d.name,
+                  item.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.spaceGrotesk(
@@ -372,7 +324,7 @@ class _LineTile extends StatelessWidget {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Text(
-                      '₹${line.lineTotal}',
+                      '₹${item.lineTotal.round()}',
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 14.sp,
                         fontWeight: FontWeight.w700,
@@ -381,44 +333,40 @@ class _LineTile extends StatelessWidget {
                     ),
                     SizedBox(width: 6.w),
                     Text(
-                      '(₹${d.price} × ${line.qty})',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.sp,
-                        color: AppColors.muted,
-                      ),
+                      '(₹${item.price.round()} × ${item.qty})',
+                      style: GoogleFonts.inter(fontSize: 11.sp, color: AppColors.muted),
                     ),
                   ],
                 ),
+                if (!item.isAvailable) ...[
+                  SizedBox(height: 3.h),
+                  Text(
+                    'Currently unavailable',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5.sp,
+                      color: AppColors.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          // Ink stepper (same DNA as the dish card)
-          _LineStepper(qty: line.qty, onInc: onInc, onDec: onDec),
+          _LineStepper(qty: item.qty, onInc: onInc, onDec: onDec),
         ],
       ),
     );
   }
 
-  Widget _fallback(Dish d) => DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: d.heroGradient,
-          ),
-        ),
-        child: Center(
-          child: Text(d.emoji, style: TextStyle(fontSize: 26.sp)),
-        ),
+  Widget _fallback() => Container(
+        color: AppColors.cream,
+        alignment: Alignment.center,
+        child: Icon(Icons.restaurant_rounded, color: AppColors.primary, size: 24.sp),
       );
 }
 
 class _LineStepper extends StatelessWidget {
-  const _LineStepper({
-    required this.qty,
-    required this.onInc,
-    required this.onDec,
-  });
+  const _LineStepper({required this.qty, required this.onInc, required this.onDec});
   final int qty;
   final VoidCallback onInc;
   final VoidCallback onDec;
@@ -440,9 +388,7 @@ class _LineStepper extends StatelessWidget {
               width: 28.w,
               height: 30.h,
               child: Icon(
-                qty == 1
-                    ? Icons.delete_outline_rounded
-                    : Icons.remove_rounded,
+                qty == 1 ? Icons.delete_outline_rounded : Icons.remove_rounded,
                 color: Colors.white,
                 size: 15.sp,
               ),
@@ -453,8 +399,7 @@ class _LineStepper extends StatelessWidget {
             child: Center(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 150),
-                transitionBuilder: (c, a) =>
-                    FadeTransition(opacity: a, child: c),
+                transitionBuilder: (c, a) => FadeTransition(opacity: a, child: c),
                 child: Text(
                   '$qty',
                   key: ValueKey(qty),
@@ -473,8 +418,7 @@ class _LineStepper extends StatelessWidget {
             child: SizedBox(
               width: 28.w,
               height: 30.h,
-              child: Icon(Icons.add_rounded,
-                  color: Colors.white, size: 15.sp),
+              child: Icon(Icons.add_rounded, color: Colors.white, size: 15.sp),
             ),
           ),
         ],
@@ -503,8 +447,7 @@ class _NoteCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.edit_note_rounded,
-                  color: AppColors.ink, size: 18.sp),
+              Icon(Icons.edit_note_rounded, color: AppColors.ink, size: 18.sp),
               SizedBox(width: 8.w),
               Text(
                 'Cooking instructions',
@@ -531,11 +474,7 @@ class _NoteCard extends StatelessWidget {
             minLines: 2,
             maxLines: 4,
             cursorColor: AppColors.primary,
-            style: GoogleFonts.inter(
-              fontSize: 13.sp,
-              color: AppColors.ink,
-              height: 1.5,
-            ),
+            style: GoogleFonts.inter(fontSize: 13.sp, color: AppColors.ink, height: 1.5),
             decoration: InputDecoration(
               isDense: true,
               border: InputBorder.none,
@@ -557,16 +496,8 @@ class _NoteCard extends StatelessWidget {
 // ─────────────────────────── bill card ───────────────────────────
 
 class _BillCard extends StatelessWidget {
-  const _BillCard({
-    required this.subtotal,
-    required this.delivery,
-    required this.taxes,
-    required this.total,
-  });
-  final int subtotal;
-  final int delivery;
-  final int taxes;
-  final int total;
+  const _BillCard({required this.bill});
+  final CartBill bill;
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -592,11 +523,19 @@ class _BillCard extends StatelessWidget {
             ],
           ),
           SizedBox(height: 10.h),
-          _row('Item total', '₹$subtotal'),
+          _row('Item total', '₹${bill.itemTotal.round()}'),
+          if (bill.discount > 0) ...[
+            SizedBox(height: 8.h),
+            _row(
+              'Coupon discount${bill.couponCode != null ? ' (${bill.couponCode})' : ''}',
+              '−₹${bill.discount.round()}',
+              valueColor: AppColors.secondary,
+            ),
+          ],
           SizedBox(height: 8.h),
-          _row('Delivery', '₹$delivery'),
+          _row('Delivery', bill.deliveryFee == 0 ? 'FREE' : '₹${bill.deliveryFee.round()}'),
           SizedBox(height: 8.h),
-          _row('Taxes & charges', '₹$taxes'),
+          _row('Taxes & charges', '₹${bill.taxesCharges.round()}'),
           Padding(
             padding: EdgeInsets.symmetric(vertical: 11.h),
             child: Divider(height: 1, color: AppColors.line),
@@ -613,7 +552,7 @@ class _BillCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '₹$total',
+                '₹${bill.grandTotal.round()}',
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 20.sp,
                   fontWeight: FontWeight.w700,
@@ -628,14 +567,13 @@ class _BillCard extends StatelessWidget {
     );
   }
 
-  Widget _row(String label, String value) => Row(
+  Widget _row(String label, String value, {Color? valueColor}) => Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 12.5.sp,
-              color: AppColors.inkSoft,
+          Flexible(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(fontSize: 12.5.sp, color: AppColors.inkSoft),
             ),
           ),
           Text(
@@ -643,7 +581,7 @@ class _BillCard extends StatelessWidget {
             style: GoogleFonts.spaceGrotesk(
               fontSize: 13.sp,
               fontWeight: FontWeight.w700,
-              color: AppColors.ink,
+              color: valueColor ?? AppColors.ink,
             ),
           ),
         ],
@@ -664,8 +602,7 @@ class _ProtectionRibbon extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.shield_rounded,
-              color: AppColors.secondary, size: 18.sp),
+          Icon(Icons.shield_rounded, color: AppColors.secondary, size: 18.sp),
           SizedBox(width: 10.w),
           Expanded(
             child: RichText(
@@ -680,9 +617,7 @@ class _ProtectionRibbon extends StatelessWidget {
                     text: 'Padosi Protection. ',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  TextSpan(
-                    text: "Full refund if it doesn't arrive or isn't right.",
-                  ),
+                  TextSpan(text: "Full refund if it doesn't arrive or isn't right."),
                 ],
               ),
             ),
@@ -696,12 +631,7 @@ class _ProtectionRibbon extends StatelessWidget {
 // ─────────────────────── sticky checkout bar ────────────────────
 
 class _CheckoutBar extends StatelessWidget {
-  const _CheckoutBar({
-    required this.items,
-    required this.total,
-    required this.onTap,
-  });
-  final int items;
+  const _CheckoutBar({required this.total, required this.onTap});
   final int total;
   final VoidCallback onTap;
   @override
@@ -759,10 +689,7 @@ class _CheckoutBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16.r),
                   onTap: onTap,
                   child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 18.w,
-                      vertical: 14.h,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 14.h),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -775,8 +702,7 @@ class _CheckoutBar extends StatelessWidget {
                           ),
                         ),
                         SizedBox(width: 8.w),
-                        Icon(Icons.arrow_forward_rounded,
-                            color: Colors.white, size: 17.sp),
+                        Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 17.sp),
                       ],
                     ),
                   ),
@@ -805,10 +731,7 @@ class _EmptyState extends StatelessWidget {
             Container(
               width: 84.w,
               height: 84.w,
-              decoration: const BoxDecoration(
-                color: AppColors.cream,
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(color: AppColors.cream, shape: BoxShape.circle),
               alignment: Alignment.center,
               child: Text('🛒', style: TextStyle(fontSize: 38.sp)),
             ),
@@ -826,11 +749,7 @@ class _EmptyState extends StatelessWidget {
             Text(
               'Browse nearby kitchens and add\nfresh home-cooked dishes.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 12.5.sp,
-                color: AppColors.muted,
-                height: 1.5,
-              ),
+              style: GoogleFonts.inter(fontSize: 12.5.sp, color: AppColors.muted, height: 1.5),
             ),
             SizedBox(height: 20.h),
             Material(
@@ -840,8 +759,7 @@ class _EmptyState extends StatelessWidget {
                 borderRadius: BorderRadius.circular(99.r),
                 onTap: () => Navigator.maybePop(context),
                 child: Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 20.w, vertical: 12.h),
+                  padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
                   child: Text(
                     'Browse kitchens',
                     style: GoogleFonts.spaceGrotesk(

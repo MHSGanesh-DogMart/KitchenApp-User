@@ -14,9 +14,10 @@ import '../../../controllers/home_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../controllers/cart_controller.dart';
 import '../../../models/home_feed.dart';
-import '../../../providers/cart_provider.dart';
-import '../../widgets/inputs/app_search_field.dart';
+import '../../widgets/padosi/add_to_cart.dart';
+import '../../widgets/padosi/wishlist_heart.dart';
 import '../padosi/location/location_result.dart';
 import '../padosi/mock/mock_data.dart';
 
@@ -54,11 +55,15 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLocation());
+    // Load the server cart so the floating cart bar reflects saved items.
+    CartController.instance.refresh();
   }
 
   // ── Home feed loading ──
   Future<void> _loadHome() async {
     if (mounted) setState(() => _loadingHome = true);
+    // Keep the cart's delivery location in sync for fee + radius checks.
+    CartController.instance.setLocation(_lat, _lng);
     final feed = await HomeController.instance.getHome(
       lat: _lat,
       lng: _lng,
@@ -114,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return [
       for (var i = 0; i < dishes.length; i++)
         MenuItem(
+          id: dishes[i].id,
           name: dishes[i].name,
           cookName: dishes[i].cookName ?? '',
           priceInr: dishes[i].price.round(),
@@ -391,8 +397,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         itemCount: _cookCards.length.clamp(0, 4),
                         itemBuilder: (_, i) {
                           final cook = _cookCards[i];
+                          final hc = _feed!.cooks[i];
                           return _CookHeroCard(
                             cook: cook,
+                            wishlistId: hc.id,
+                            wishlisted: hc.isWishlisted,
                             onTap: () => Navigator.pushNamed(
                               context,
                               RouteNames.cookDetail,
@@ -466,6 +475,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   childAspectRatio: .64,
                   children: _dishCards.map((m) {
                     final dish = Dish(
+                      id: m.id,
                       name: m.name,
                       price: m.priceInr,
                       emoji: '🍽',
@@ -473,19 +483,23 @@ class _HomeScreenState extends State<HomeScreen> {
                       image: m.image,
                       kcal: m.kcal,
                     );
-                    final cart = context.watch<CartProvider>();
+                    final cart = context.watch<CartController>();
+                    final count = cart.qtyOf(m.id);
                     return _MenuGridCard(
                       item: m,
-                      count: cart.qtyOf(m.name),
-                      onInc: () => context.read<CartProvider>().inc(
-                        dish,
-                        cookName: m.cookName,
-                      ),
-                      onDec: () => context.read<CartProvider>().dec(m.name),
+                      count: count,
+                      onInc: () => count == 0
+                          ? addToCart(context, m.id, silentSuccess: true)
+                          : CartController.instance.increment(m.id),
+                      onDec: () => CartController.instance.decrement(m.id),
                       onTap: () => Navigator.pushNamed(
                         context,
                         RouteNames.dishDetail,
-                        arguments: {'dish': dish, 'cookName': m.cookName},
+                        arguments: {
+                          'dish': dish,
+                          'cookName': m.cookName,
+                          'dishId': m.id,
+                        },
                       ),
                     );
                   }).toList(),
@@ -695,9 +709,16 @@ class _CategoryPill extends StatelessWidget {
 /// Tall portrait cook card — full-bleed food photo, rating chip + heart,
 /// bottom gradient overlay with name + tier + chips.
 class _CookHeroCard extends StatelessWidget {
-  const _CookHeroCard({required this.cook, this.onTap});
+  const _CookHeroCard({
+    required this.cook,
+    this.onTap,
+    this.wishlistId,
+    this.wishlisted = false,
+  });
   final Cook cook;
   final VoidCallback? onTap;
+  final String? wishlistId;
+  final bool wishlisted;
 
   @override
   Widget build(BuildContext context) {
@@ -789,32 +810,17 @@ class _CookHeroCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              // Top-right heart
-              Positioned(
-                top: 10.h,
-                right: 10.w,
-                child: Container(
-                  width: 36.w,
-                  height: 36.w,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: .15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.favorite_border_rounded,
-                    color: AppColors.ink,
-                    size: 17.sp,
+              // Top-right wishlist heart (live)
+              if (wishlistId != null && wishlistId!.isNotEmpty)
+                Positioned(
+                  top: 10.h,
+                  right: 10.w,
+                  child: WishlistHeart(
+                    type: 'kitchen',
+                    targetId: wishlistId!,
+                    initial: wishlisted,
                   ),
                 ),
-              ),
               // Bottom content
               Positioned(
                 left: 14.w,

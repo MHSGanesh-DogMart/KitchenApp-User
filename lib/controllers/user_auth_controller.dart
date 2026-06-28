@@ -13,7 +13,9 @@ class UserAuthController {
   static final UserAuthController instance = UserAuthController._();
 
   /// Request an OTP for [phone] (10 digits, no +91). Dummy code is 1234.
-  Future<bool> sendOtp(String phone) async {
+  /// Returns whether the send succeeded + whether the phone is already
+  /// registered (so the UI shows Login vs Create-account).
+  Future<({bool ok, bool isRegistered})> sendOtp(String phone) async {
     try {
       AppLogger.i('Customer requesting OTP for $phone');
       final res = await ApiClient.instance.post(
@@ -26,16 +28,16 @@ class UserAuthController {
         if (msg.isNotEmpty) {
           ok ? ToastService.success(msg) : ToastService.error(msg);
         }
-        return ok;
+        return (ok: ok, isRegistered: res.data['isRegistered'] as bool? ?? false);
       }
-      return false;
+      return (ok: false, isRegistered: false);
     } on ApiException catch (e) {
       ToastService.error(e.message);
-      return false;
+      return (ok: false, isRegistered: false);
     } catch (e) {
       AppLogger.e('Customer sendOtp failed: $e');
       ToastService.error('Failed to send OTP');
-      return false;
+      return (ok: false, isRegistered: false);
     }
   }
 
@@ -93,6 +95,56 @@ class UserAuthController {
       AppLogger.e('Customer verifyOtp failed: $e');
       ToastService.error('Verification failed');
       return null;
+    }
+  }
+
+  /// Register/append this device's FCM token (server stores an array — one
+  /// entry per device). Safe to call on login + on token refresh.
+  Future<bool> registerFcmToken(String fcmToken) async {
+    if (fcmToken.isEmpty) return false;
+    try {
+      final res = await ApiClient.instance.post(
+        ApiEndpoints.userFcmToken,
+        body: {'fcmToken': fcmToken},
+      );
+      return res.statusCode == 200;
+    } catch (e) {
+      AppLogger.w('registerFcmToken failed: $e');
+      return false;
+    }
+  }
+
+  /// Tell the server to drop this device's token so it stops getting pushes.
+  /// Other devices stay logged in. The JWT is cleared by AuthProvider.logout.
+  Future<void> logout({String? fcmToken}) async {
+    try {
+      await ApiClient.instance.post(
+        ApiEndpoints.userLogout,
+        body: {if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken},
+      );
+    } catch (e) {
+      AppLogger.w('Customer logout API failed (continuing): $e');
+    }
+  }
+
+  /// Permanently delete the customer's account + data.
+  Future<bool> deleteAccount() async {
+    try {
+      final res = await ApiClient.instance.delete(ApiEndpoints.userDeleteAccount);
+      if (res.statusCode == 200) {
+        final msg = res.data?['message'] as String? ?? 'Account deleted';
+        ToastService.success(msg);
+        return true;
+      }
+      ToastService.error(res.data?['message'] as String? ?? 'Could not delete account');
+      return false;
+    } on ApiException catch (e) {
+      ToastService.error(e.message);
+      return false;
+    } catch (e) {
+      AppLogger.e('deleteAccount failed: $e');
+      ToastService.error('Could not delete account');
+      return false;
     }
   }
 }

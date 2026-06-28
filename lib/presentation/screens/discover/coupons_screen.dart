@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../controllers/cart_controller.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../models/coupon.dart';
 import '../auth/_auth_widgets.dart';
 import '_discover_widgets.dart';
 
@@ -17,23 +19,34 @@ class _CouponsScreenState extends State<CouponsScreen> {
   final _ctrl = TextEditingController();
   String? _applied;
 
-  static const _coupons = <_Coupon>[
-    _Coupon(
-      code: 'FRESH50',
-      title: '50% off your first order',
-      sub: 'Up to ₹100 · min ₹149',
-    ),
-    _Coupon(
-      code: 'HOME20',
-      title: '20% off home chefs',
-      sub: 'Up to ₹60',
-    ),
-    _Coupon(
-      code: 'WEEKEND',
-      title: 'Free delivery this weekend',
-      sub: 'On orders above ₹199',
-    ),
-  ];
+  List<Coupon> _coupons = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final list = await CartController.instance.fetchCoupons();
+    if (!mounted) return;
+    setState(() {
+      _coupons = list;
+      _loading = false;
+    });
+  }
+
+  /// Apply [code] to the server cart; on success return it to the caller.
+  Future<void> _apply(String code) async {
+    if (code.isEmpty) return;
+    final ok = await CartController.instance.applyCoupon(code.toUpperCase());
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _applied = code.toUpperCase());
+      Navigator.pop(context, code.toUpperCase());
+    }
+  }
 
   @override
   void dispose() {
@@ -106,28 +119,36 @@ class _CouponsScreenState extends State<CouponsScreen> {
                           child: AuthButton(
                             label: 'Apply',
                             variant: AuthBtnVariant.ink,
-                            onPressed: () {
-                              if (_ctrl.text.isEmpty) return;
-                              setState(() =>
-                                  _applied = _ctrl.text.toUpperCase());
-                            },
+                            onPressed: () => _apply(_ctrl.text.trim()),
                           ),
                         ),
                       ],
                     ),
                   ),
                   SizedBox(height: 14.h),
-                  ..._coupons.map((c) => Padding(
-                        padding: EdgeInsets.only(bottom: 10.h),
-                        child: _CouponCard(
-                          coupon: c,
-                          applied: _applied == c.code,
-                          onApply: () {
-                            setState(() => _applied = c.code);
-                            Navigator.pop(context, c.code);
-                          },
-                        ),
-                      )),
+                  if (_loading)
+                    Padding(
+                      padding: EdgeInsets.only(top: 40.h),
+                      child: const Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_coupons.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 40.h),
+                      child: Text(
+                        'No offers available right now',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(fontSize: 13.sp, color: AppColors.muted),
+                      ),
+                    )
+                  else
+                    ..._coupons.map((c) => Padding(
+                          padding: EdgeInsets.only(bottom: 10.h),
+                          child: _CouponCard(
+                            coupon: c,
+                            applied: _applied == c.code,
+                            onApply: () => _apply(c.code),
+                          ),
+                        )),
                 ],
               ),
             ),
@@ -138,24 +159,13 @@ class _CouponsScreenState extends State<CouponsScreen> {
   }
 }
 
-class _Coupon {
-  const _Coupon({
-    required this.code,
-    required this.title,
-    required this.sub,
-  });
-  final String code;
-  final String title;
-  final String sub;
-}
-
 class _CouponCard extends StatelessWidget {
   const _CouponCard({
     required this.coupon,
     required this.applied,
     required this.onApply,
   });
-  final _Coupon coupon;
+  final Coupon coupon;
   final bool applied;
   final VoidCallback onApply;
 
@@ -206,21 +216,23 @@ class _CouponCard extends StatelessWidget {
           ),
           SizedBox(height: 4.h),
           Text(
-            coupon.title,
+            coupon.benefit,
             style: GoogleFonts.inter(
               fontSize: 13.sp,
               fontWeight: FontWeight.w700,
               color: AppColors.ink,
             ),
           ),
-          SizedBox(height: 4.h),
-          Text(
-            coupon.sub,
-            style: GoogleFonts.inter(
-              fontSize: 11.sp,
-              color: AppColors.muted,
+          if (coupon.description.isNotEmpty) ...[
+            SizedBox(height: 4.h),
+            Text(
+              coupon.description,
+              style: GoogleFonts.inter(
+                fontSize: 11.sp,
+                color: AppColors.muted,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

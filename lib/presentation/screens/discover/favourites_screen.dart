@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../controllers/wishlist_controller.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/routing/route_names.dart';
+import '../../../models/home_feed.dart';
 import '../auth/_auth_widgets.dart';
 import '../padosi/mock/mock_data.dart';
 import '_discover_widgets.dart';
@@ -20,18 +22,45 @@ class FavouritesScreen extends StatefulWidget {
 }
 
 class _FavouritesScreenState extends State<FavouritesScreen> {
-  /// Demo seed — first 3 cooks as wishlisted.
-  late final List<Cook> _wishlist =
-      MockData.cooks.take(3).toList(growable: true);
+  List<HomeCook> _wishlist = [];
+  bool _loading = true;
 
-  void _remove(Cook c) {
-    setState(() => _wishlist.removeWhere((x) => x.id == c.id));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Removed ${c.name} from your wishlist'),
-        backgroundColor: AppColors.ink,
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (mounted) setState(() => _loading = true);
+    final list = await WishlistController.instance.getKitchens();
+    if (!mounted) return;
+    setState(() {
+      _wishlist = list;
+      _loading = false;
+    });
+  }
+
+  Cook _toCook(HomeCook c) => Cook(
+        id: c.id,
+        name: c.name,
+        cuisine: (c.cuisines == null || c.cuisines!.isEmpty)
+            ? 'Home kitchen'
+            : c.cuisines!,
+        distanceKm: c.distanceKm ?? 0,
+        etaMin: c.etaMins ?? 0,
+        rating: c.rating ?? 0,
+        tier: c.tier,
+        heroEmoji: '🍽',
+        heroGradient: const [AppColors.primary, AppColors.primary],
+        image: (c.bannerUrl?.isNotEmpty ?? false)
+            ? c.bannerUrl!
+            : (c.selfieUrl ?? ''),
+      );
+
+  Future<void> _remove(HomeCook c) async {
+    final ok = await WishlistController.instance.remove('kitchen', c.id);
+    if (ok) _load(); // controller toasts "Removed from wishlist"
   }
 
   @override
@@ -81,9 +110,11 @@ class _FavouritesScreenState extends State<FavouritesScreen> {
               ),
             ),
 
-            // ── List / empty ──
+            // ── List / loading / empty ──
             Expanded(
-              child: _wishlist.isEmpty
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _wishlist.isEmpty
                   ? const _EmptyState()
                   : ListView.separated(
                       physics: const BouncingScrollPhysics(),
@@ -92,7 +123,8 @@ class _FavouritesScreenState extends State<FavouritesScreen> {
                       itemCount: _wishlist.length,
                       separatorBuilder: (_, _) => SizedBox(height: 12.h),
                       itemBuilder: (_, i) {
-                        final c = _wishlist[i];
+                        final hc = _wishlist[i];
+                        final c = _toCook(hc);
                         return CookRowCard(
                           cook: c,
                           isNew: c.isNew,
@@ -106,7 +138,7 @@ class _FavouritesScreenState extends State<FavouritesScreen> {
                             shape: const CircleBorder(),
                             child: InkWell(
                               customBorder: const CircleBorder(),
-                              onTap: () => _remove(c),
+                              onTap: () => _remove(hc),
                               child: SizedBox(
                                 width: 34.w,
                                 height: 34.w,

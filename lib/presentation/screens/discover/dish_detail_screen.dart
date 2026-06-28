@@ -7,8 +7,9 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../controllers/catalog_controller.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../controllers/cart_controller.dart';
 import '../../../models/home_feed.dart';
-import '../../../providers/cart_provider.dart';
+import '../../widgets/padosi/add_to_cart.dart';
 import '../../widgets/padosi/dish_grid_card.dart';
 import '../../widgets/padosi/global_cart_bar.dart';
 import '../padosi/mock/mock_data.dart';
@@ -273,24 +274,23 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                                 // Small "Add to cart" pill — adds the
                                 // dish to the global cart at the current
                                 // quantity (defaults to 1).
-                                _DishAddPill(
-                                  count: context
-                                      .watch<CartProvider>()
-                                      .qtyOf(dish.name),
-                                  onAdd: () => context
-                                      .read<CartProvider>()
-                                      .addQty(
-                                        dish,
-                                        cookName: cookName,
-                                        qty: _qty,
-                                      ),
-                                  onInc: () => context
-                                      .read<CartProvider>()
-                                      .inc(dish, cookName: cookName),
-                                  onDec: () => context
-                                      .read<CartProvider>()
-                                      .dec(dish.name),
-                                ),
+                                Builder(builder: (context) {
+                                  final addId = widget.dishId ?? dish.id;
+                                  final count = addId.isEmpty
+                                      ? 0
+                                      : context
+                                          .watch<CartController>()
+                                          .qtyOf(addId);
+                                  return _DishAddPill(
+                                    count: count,
+                                    onAdd: () =>
+                                        addToCart(context, addId, qty: _qty),
+                                    onInc: () => CartController.instance
+                                        .increment(addId),
+                                    onDec: () => CartController.instance
+                                        .decrement(addId),
+                                  );
+                                }),
                               ],
                             ),
                           ],
