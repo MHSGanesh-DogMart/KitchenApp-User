@@ -28,6 +28,7 @@ class ApiEndpoints {
   static const String userOrderVerify = '/api/user/orders/verify';
   static const String userOrders = '/api/user/orders';
   static String userOrderById(String id) => '/api/user/orders/$id';
+  static String userOrderCancel(String id) => '/api/user/orders/$id/cancel';
 
   // ── Addresses ──
   static const String userAddresses = '/api/user/addresses';

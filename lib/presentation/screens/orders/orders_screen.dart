@@ -64,23 +64,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       height: 1.1,
                     ),
                   ),
-                  SizedBox(height: 3.h),
-                  Text(
-                    '${active.length} active · ${past.length} past',
-                    style: GoogleFonts.inter(fontSize: 12.5.sp, color: AppColors.muted),
-                  ),
+                  // SizedBox(height: 3.h),
+                  // Text(
+                  //   '${active.length} active · ${past.length} past',
+                  //   style: GoogleFonts.inter(fontSize: 12.5.sp, color: AppColors.muted),
+                  // ),
                 ],
               ),
             ),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 20.w),
               child: Container(
-                decoration: BoxDecoration(color: AppColors.cream, borderRadius: BorderRadius.circular(16.r)),
+                decoration: BoxDecoration(
+                  color: AppColors.cream,
+                  borderRadius: BorderRadius.circular(16.r),
+                ),
                 padding: EdgeInsets.all(4.w),
                 child: Row(
                   children: [
-                    _SegTab(label: 'Active', count: active.length, selected: _tab == 0, onTap: () => setState(() => _tab = 0)),
-                    _SegTab(label: 'Past', count: past.length, selected: _tab == 1, onTap: () => setState(() => _tab = 1)),
+                    _SegTab(
+                      label: 'Active',
+                      count: active.length,
+                      selected: _tab == 0,
+                      onTap: () => setState(() => _tab = 0),
+                    ),
+                    _SegTab(
+                      label: 'Past',
+                      count: past.length,
+                      selected: _tab == 1,
+                      onTap: () => setState(() => _tab = 1),
+                    ),
                   ],
                 ),
               ),
@@ -90,20 +103,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : list.isEmpty
-                      ? _EmptyState(isActive: _tab == 0)
-                      : RefreshIndicator(
-                          onRefresh: _load,
-                          child: ListView.separated(
-                            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                            padding: EdgeInsets.fromLTRB(20.w, 0, 20.w, 110.h),
-                            itemCount: list.length,
-                            separatorBuilder: (_, _) => SizedBox(height: 14.h),
-                            itemBuilder: (_, i) => _OrderCard(
-                              order: list[i],
-                              onTap: () => Navigator.pushNamed(context, RouteNames.orderDetail, arguments: {'orderId': list[i].id}),
-                            ),
+                  ? _EmptyState(isActive: _tab == 0)
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        padding: EdgeInsets.fromLTRB(20.w, 0, 20.w, 110.h),
+                        itemCount: list.length,
+                        separatorBuilder: (_, _) => SizedBox(height: 14.h),
+                        itemBuilder: (_, i) => _OrderCard(
+                          order: list[i],
+                          onTap: () => Navigator.pushNamed(
+                            context,
+                            RouteNames.orderDetail,
+                            arguments: {'orderId': list[i].id},
                           ),
                         ),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -114,23 +133,60 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
 // ─────────────────────── status mapping ───────────────────────
 
-({IconData icon, String label, Color fg, Color bg}) _statusStyle(String status) {
+({IconData icon, String label, Color fg, Color bg}) _statusStyle(
+  String status,
+) {
   switch (status) {
     case 'DELIVERED':
-      return (icon: Icons.check_circle_rounded, label: 'Delivered', fg: AppColors.success, bg: AppColors.success.withValues(alpha: .12));
+      return (
+        icon: Icons.check_circle_rounded,
+        label: 'Delivered',
+        fg: AppColors.success,
+        bg: AppColors.success.withValues(alpha: .12),
+      );
     case 'CANCELLED':
     case 'PAYMENT_FAILED':
-      return (icon: Icons.cancel_rounded, label: 'Cancelled', fg: AppColors.muted, bg: AppColors.cream);
+      return (
+        icon: Icons.cancel_rounded,
+        label: 'Cancelled',
+        fg: AppColors.muted,
+        bg: AppColors.cream,
+      );
     case 'OUT_FOR_DELIVERY':
-      return (icon: Icons.delivery_dining_rounded, label: 'Out for delivery', fg: AppColors.primary, bg: AppColors.primarySoft);
+      return (
+        icon: Icons.delivery_dining_rounded,
+        label: 'Out for delivery',
+        fg: AppColors.primary,
+        bg: AppColors.primarySoft,
+      );
     case 'READY':
-      return (icon: Icons.shopping_bag_rounded, label: 'Ready', fg: AppColors.primary, bg: AppColors.primarySoft);
+      return (
+        icon: Icons.shopping_bag_rounded,
+        label: 'Ready',
+        fg: AppColors.primary,
+        bg: AppColors.primarySoft,
+      );
     case 'PREPARING':
-      return (icon: Icons.soup_kitchen_rounded, label: 'Preparing', fg: AppColors.primary, bg: AppColors.primarySoft);
+      return (
+        icon: Icons.soup_kitchen_rounded,
+        label: 'Preparing',
+        fg: AppColors.primary,
+        bg: AppColors.primarySoft,
+      );
     case 'ACCEPTED':
-      return (icon: Icons.thumb_up_rounded, label: 'Accepted', fg: AppColors.primary, bg: AppColors.primarySoft);
+      return (
+        icon: Icons.thumb_up_rounded,
+        label: 'Accepted',
+        fg: AppColors.primary,
+        bg: AppColors.primarySoft,
+      );
     default: // PLACED
-      return (icon: Icons.receipt_long_rounded, label: 'Placed', fg: AppColors.secondary, bg: AppColors.secondarySoft);
+      return (
+        icon: Icons.receipt_long_rounded,
+        label: 'Placed',
+        fg: AppColors.secondary,
+        bg: AppColors.secondarySoft,
+      );
   }
 }
 
@@ -138,7 +194,20 @@ String _shortDate(String? iso) {
   if (iso == null) return '';
   final d = DateTime.tryParse(iso)?.toLocal();
   if (d == null) return '';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
   final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
   final m = d.minute.toString().padLeft(2, '0');
   final ap = d.hour < 12 ? 'AM' : 'PM';
@@ -146,7 +215,12 @@ String _shortDate(String? iso) {
 }
 
 class _SegTab extends StatelessWidget {
-  const _SegTab({required this.label, required this.count, required this.selected, required this.onTap});
+  const _SegTab({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
   final String label;
   final int count;
   final bool selected;
@@ -178,7 +252,9 @@ class _SegTab extends StatelessWidget {
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
                   decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : AppColors.line.withValues(alpha: .6),
+                    color: selected
+                        ? AppColors.primary
+                        : AppColors.line.withValues(alpha: .6),
                     borderRadius: BorderRadius.circular(99.r),
                   ),
                   child: Text(
@@ -206,14 +282,24 @@ class _OrderCard extends StatelessWidget {
 
   String get _initials {
     final n = order.kitchenName ?? 'Kitchen';
-    return n.split(' ').take(2).map((s) => s.isNotEmpty ? s[0] : '').join().toUpperCase();
+    return n
+        .split(' ')
+        .take(2)
+        .map((s) => s.isNotEmpty ? s[0] : '')
+        .join()
+        .toUpperCase();
   }
 
   @override
   Widget build(BuildContext context) {
     final s = _statusStyle(order.status);
-    final thumbs = order.items.where((i) => (i.imageUrl?.isNotEmpty ?? false)).map((i) => i.imageUrl!).take(5).toList();
-    final isCancelled = order.status == 'CANCELLED' || order.status == 'PAYMENT_FAILED';
+    final thumbs = order.items
+        .where((i) => (i.imageUrl?.isNotEmpty ?? false))
+        .map((i) => i.imageUrl!)
+        .take(5)
+        .toList();
+    final isCancelled =
+        order.status == 'CANCELLED' || order.status == 'PAYMENT_FAILED';
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(20.r),
@@ -233,8 +319,14 @@ class _OrderCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
-                      decoration: BoxDecoration(color: s.bg, borderRadius: BorderRadius.circular(99.r)),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 9.w,
+                        vertical: 5.h,
+                      ),
+                      decoration: BoxDecoration(
+                        color: s.bg,
+                        borderRadius: BorderRadius.circular(99.r),
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -242,7 +334,11 @@ class _OrderCard extends StatelessWidget {
                           SizedBox(width: 4.w),
                           Text(
                             s.label,
-                            style: GoogleFonts.spaceGrotesk(fontSize: 11.sp, fontWeight: FontWeight.w700, color: s.fg),
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w700,
+                              color: s.fg,
+                            ),
                           ),
                         ],
                       ),
@@ -251,7 +347,11 @@ class _OrderCard extends StatelessWidget {
                     if (!isCancelled)
                       Text(
                         '₹${order.grandTotal.round()}',
-                        style: GoogleFonts.spaceGrotesk(fontSize: 16.sp, fontWeight: FontWeight.w700, color: AppColors.ink),
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
+                        ),
                       ),
                   ],
                 ),
@@ -263,11 +363,18 @@ class _OrderCard extends StatelessWidget {
                     Container(
                       width: 28.w,
                       height: 28.w,
-                      decoration: const BoxDecoration(color: AppColors.tier1, shape: BoxShape.circle),
+                      decoration: const BoxDecoration(
+                        color: AppColors.tier1,
+                        shape: BoxShape.circle,
+                      ),
                       alignment: Alignment.center,
                       child: Text(
                         _initials,
-                        style: GoogleFonts.spaceGrotesk(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 10.sp),
+                        style: GoogleFonts.spaceGrotesk(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10.sp,
+                        ),
                       ),
                     ),
                     SizedBox(width: 8.w),
@@ -291,15 +398,26 @@ class _OrderCard extends StatelessWidget {
                             '${order.itemCount} item${order.itemCount == 1 ? '' : 's'} · ${_shortDate(order.createdAt)}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(fontSize: 11.sp, color: AppColors.muted),
+                            style: GoogleFonts.inter(
+                              fontSize: 11.sp,
+                              color: AppColors.muted,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     if (order.isPickup)
-                      Icon(Icons.storefront_rounded, size: 16.sp, color: AppColors.muted)
+                      Icon(
+                        Icons.storefront_rounded,
+                        size: 16.sp,
+                        color: AppColors.muted,
+                      )
                     else
-                      Icon(Icons.delivery_dining_rounded, size: 16.sp, color: AppColors.muted),
+                      Icon(
+                        Icons.delivery_dining_rounded,
+                        size: 16.sp,
+                        color: AppColors.muted,
+                      ),
                   ],
                 ),
               ),
@@ -330,7 +448,11 @@ class _OrderCard extends StatelessWidget {
                             errorWidget: (_, _, _) => Container(
                               color: AppColors.cream,
                               alignment: Alignment.center,
-                              child: Icon(Icons.restaurant_rounded, color: AppColors.muted, size: 20.sp),
+                              child: Icon(
+                                Icons.restaurant_rounded,
+                                color: AppColors.muted,
+                                size: 20.sp,
+                              ),
                             ),
                           ),
                         ),
@@ -343,7 +465,9 @@ class _OrderCard extends StatelessWidget {
                 _FooterBtn(
                   label: order.isPickup ? 'View pickup code' : 'Track order',
                   primary: true,
-                  icon: order.isPickup ? Icons.qr_code_rounded : Icons.location_on_rounded,
+                  icon: order.isPickup
+                      ? Icons.qr_code_rounded
+                      : Icons.location_on_rounded,
                   onTap: onTap,
                 )
               else
@@ -362,7 +486,12 @@ class _OrderCard extends StatelessWidget {
 }
 
 class _FooterBtn extends StatelessWidget {
-  const _FooterBtn({required this.label, required this.primary, required this.onTap, this.icon});
+  const _FooterBtn({
+    required this.label,
+    required this.primary,
+    required this.onTap,
+    this.icon,
+  });
   final String label;
   final bool primary;
   final VoidCallback onTap;
@@ -379,7 +508,11 @@ class _FooterBtn extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 16.sp, color: primary ? AppColors.primary : AppColors.ink),
+              Icon(
+                icon,
+                size: 16.sp,
+                color: primary ? AppColors.primary : AppColors.ink,
+              ),
               SizedBox(width: 6.w),
             ],
             Text(
@@ -411,9 +544,15 @@ class _EmptyState extends StatelessWidget {
             Container(
               width: 80.w,
               height: 80.w,
-              decoration: const BoxDecoration(color: AppColors.cream, shape: BoxShape.circle),
+              decoration: const BoxDecoration(
+                color: AppColors.cream,
+                shape: BoxShape.circle,
+              ),
               alignment: Alignment.center,
-              child: Text(isActive ? '🍽' : '📜', style: TextStyle(fontSize: 34.sp)),
+              child: Text(
+                isActive ? '🍽' : '📜',
+                style: TextStyle(fontSize: 34.sp),
+              ),
             ),
             SizedBox(height: 16.h),
             Text(
@@ -431,7 +570,11 @@ class _EmptyState extends StatelessWidget {
                   ? 'Once you place an order, you can\ntrack it here.'
                   : 'When you order from a kitchen,\nit will show up here.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 12.sp, color: AppColors.muted, height: 1.5),
+              style: GoogleFonts.inter(
+                fontSize: 12.sp,
+                color: AppColors.muted,
+                height: 1.5,
+              ),
             ),
           ],
         ),

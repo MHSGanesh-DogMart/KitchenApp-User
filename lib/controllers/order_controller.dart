@@ -85,6 +85,27 @@ class OrderController {
     }
   }
 
+  /// Cancel an order (only allowed while PLACED/ACCEPTED — server enforces).
+  Future<Order?> cancel(String id) async {
+    try {
+      final res = await ApiClient.instance.patch(ApiEndpoints.userOrderCancel(id));
+      final data = (res.data is Map) ? res.data['data'] : null;
+      final msg = (res.data is Map) ? res.data['message']?.toString() : null;
+      if (data is Map<String, dynamic>) {
+        if (msg != null) ToastService.success(msg);
+        return Order.fromJson(data);
+      }
+      return null;
+    } on ApiException catch (e) {
+      ToastService.error(e.message); // e.g. "can no longer be cancelled"
+      return null;
+    } catch (e) {
+      AppLogger.e('cancel failed: $e');
+      ToastService.error('Could not cancel order');
+      return null;
+    }
+  }
+
   Future<Order?> getOrder(String id) async {
     try {
       final res = await ApiClient.instance.get(ApiEndpoints.userOrderById(id));

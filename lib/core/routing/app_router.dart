@@ -152,7 +152,11 @@ class AppRouter {
       case RouteNames.cancelOrder:
         return _page(const CancelScreen(), settings);
       case RouteNames.orderDetail:
-        return _page(const OrderDetailScreen(), settings);
+        final args = settings.arguments as Map? ?? const {};
+        return _page(
+          OrderDetailScreen(orderId: args['orderId'] as String?),
+          settings,
+        );
       case RouteNames.notifications:
         return _page(const NotificationsScreen(), settings);
 
